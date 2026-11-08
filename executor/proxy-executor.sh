@@ -1,0 +1,249 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# Reverse Proxy Manager - Privileged Executor Wrapper
+# ==============================================================================
+# Este script se ejecuta mediante sudo por el usuario www-data con argumentos
+# estrictamente validados. Prohíbe cualquier comando arbitrario o inyección de flags.
+# ==============================================================================
+
+set -euo pipefail
+
+# Entorno seguro
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+umask 027
+
+# Directorios permitidos
+SITES_AVAILABLE="${NGINX_SITES_AVAILABLE:-/etc/nginx/sites-available}"
+SITES_ENABLED="${NGINX_SITES_ENABLED:-/etc/nginx/sites-enabled}"
+STAGING_DIR="${NGINX_STAGING_DIR:-/var/www/reverse-proxy/writable/staging}"
+
+# Función de log de error
+error_exit() {
+    echo "ERROR: $1" >&2
+    exit "${2:-1}"
+}
+
+# Validación básica de número de argumentos
+if [ $# -lt 1 ]; then
+    error_exit "Uso: $0 <action> [argumentos...]" 2
+fi
+
+ACTION="$1"
+shift
+
+case "${ACTION}" in
+    validate-config)
+        # Valida un archivo temporal o la configuración general de Nginx
+        if [ $# -lt 1 ]; then
+            # Sin archivo específico, valida la configuración global activa
+            nginx -t 2>&1
+            exit $?
+        fi
+
+        CONFIG_FILE="$1"
+        # Seguridad: Solo permitir rutas absolutas dentro de directorios autorizados
+        REAL_PATH="$(realpath -q "${CONFIG_FILE}" 2>/dev/null || echo "")"
+        if [ -z "${REAL_PATH}" ] || [ ! -f "${REAL_PATH}" ]; then
+            error_exit "Archivo de configuración no encontrado o no válido." 3
+        fi
+
+        # Comprobar que esté dentro de sites-available o staging
+        case "${REAL_PATH}" in
+            "${SITES_AVAILABLE}"/*|"${STAGING_DIR}"/*|/tmp/*|/var/tmp/*)
+                ;;
+            *)
+                error_exit "Ruta no autorizada para validación: ${REAL_PATH}" 4
+                ;;
+        esac
+
+        # Prueba de sintaxis con nginx
+        nginx -t -c "${REAL_PATH}" 2>&1 || nginx -t 2>&1
+        exit $?
+        ;;
+
+    apply-host)
+        if [ $# -ne 1 ]; then
+            error_exit "Uso: $0 apply-host <host_id>" 5
+        fi
+
+        HOST_ID="$1"
+        # Validación estricta: host_id debe ser numérico
+        if ! [[ "${HOST_ID}" =~ ^[0-9]+$ ]]; then
+            error_exit "El ID de host debe ser un número entero positivo." 6
+        fi
+
+        SRC_FILE="${SITES_AVAILABLE}/${HOST_ID}.conf"
+        DST_LINK="${SITES_ENABLED}/${HOST_ID}.conf"
+
+        if [ ! -f "${SRC_FILE}" ]; then
+            error_exit "El archivo origen ${SRC_FILE} no existe." 7
+        fi
+
+        # Crear symlink
+        ln -sf "${SRC_FILE}" "${DST_LINK}"
+
+        # Validar la configuración global tras el cambio
+        if ! nginx -t 2>&1; then
+            # Rollback: deshacer symlink si rompe la configuración
+            rm -f "${DST_LINK}"
+            error_exit "La nueva configuración es inválida. Se ha revertido el enlace en sites-enabled." 8
+        fi
+
+        # Recargar Nginx de forma no disruptiva
+        systemctl reload nginx 2>&1
+        echo "OK: Host ${HOST_ID} aplicado y Nginx recargado."
+        exit 0
+        ;;
+
+    disable-host)
+        if [ $# -ne 1 ]; then
+            error_exit "Uso: $0 disable-host <host_id>" 9
+        fi
+
+        HOST_ID="$1"
+        if ! [[ "${HOST_ID}" =~ ^[0-9]+$ ]]; then
+            error_exit "El ID de host debe ser un número entero positivo." 10
+        fi
+
+        DST_LINK="${SITES_ENABLED}/${HOST_ID}.conf"
+
+        if [ -L "${DST_LINK}" ] || [ -f "${DST_LINK}" ]; then
+            rm -f "${DST_LINK}"
+        fi
+
+        # Validar y recargar
+        if ! nginx -t 2>&1; then
+            error_exit "Fallo en la configuración tras deshabilitar el host." 11
+        fi
+
+        systemctl reload nginx 2>&1
+        echo "OK: Host ${HOST_ID} deshabilitado y Nginx recargado."
+        exit 0
+        ;;
+
+    remove-host)
+        if [ $# -ne 1 ]; then
+            error_exit "Uso: $0 remove-host <host_id>" 12
+        fi
+
+        HOST_ID="$1"
+        if ! [[ "${HOST_ID}" =~ ^[0-9]+$ ]]; then
+            error_exit "El ID de host debe ser un número entero positivo." 13
+        fi
+
+        SRC_FILE="${SITES_AVAILABLE}/${HOST_ID}.conf"
+        DST_LINK="${SITES_ENABLED}/${HOST_ID}.conf"
+
+        rm -f "${DST_LINK}"
+        rm -f "${SRC_FILE}"
+
+        # Validar y recargar
+        nginx -t 2>&1 || true
+        systemctl reload nginx 2>&1 || true
+        echo "OK: Host ${HOST_ID} eliminado por completo."
+        exit 0
+        ;;
+
+    reload-nginx)
+        if ! nginx -t 2>&1; then
+            error_exit "No se puede recargar Nginx: la configuración actual tiene errores de sintaxis." 14
+        fi
+        systemctl reload nginx 2>&1
+        echo "OK: Nginx recargado con éxito."
+        exit 0
+        ;;
+
+    status-nginx)
+        systemctl is-active nginx 2>&1
+        exit $?
+        ;;
+
+    issue-cert)
+        if [ $# -lt 1 ]; then
+            error_exit "Uso: $0 issue-cert <domain> [extra_domains] [email]" 16
+        fi
+
+        PRIMARY_DOMAIN="$1"
+        EXTRA_DOMAINS="${2:-}"
+        EMAIL="${3:-}"
+
+        DOMAIN_REGEX="^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)+$"
+
+        # Validar dominio principal contra inyección
+        if [[ "${PRIMARY_DOMAIN}" =~ ^- ]] || ! [[ "${PRIMARY_DOMAIN}" =~ ${DOMAIN_REGEX} ]]; then
+            if [ "${PRIMARY_DOMAIN}" != "localhost" ]; then
+                error_exit "Dominio principal inválido o potencialmente malicioso: ${PRIMARY_DOMAIN}" 17
+            fi
+        fi
+
+        CERTBOT_ARGS=(certonly --webroot -w "${ACME_WEBROOT:-/var/www/letsencrypt}" -d "${PRIMARY_DOMAIN}")
+
+        # Validar dominios adicionales si existen
+        if [ -n "${EXTRA_DOMAINS}" ]; then
+            IFS=',' read -ra ALIASES <<< "${EXTRA_DOMAINS}"
+            for ALIAS in "${ALIASES[@]}"; do
+                ALIAS="$(echo "${ALIAS}" | xargs)"
+                if [ -n "${ALIAS}" ]; then
+                    if [[ "${ALIAS}" =~ ^- ]] || ! [[ "${ALIAS}" =~ ${DOMAIN_REGEX} ]]; then
+                        error_exit "Alias de dominio inválido o potencialmente malicioso: ${ALIAS}" 18
+                    fi
+                    CERTBOT_ARGS+=(-d "${ALIAS}")
+                fi
+            done
+        fi
+
+        if [ -n "${EMAIL}" ]; then
+            if ! [[ "${EMAIL}" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+                error_exit "Correo electrónico no válido: ${EMAIL}" 19
+            fi
+            CERTBOT_ARGS+=(--email "${EMAIL}" --agree-tos --no-eff-email)
+        else
+            CERTBOT_ARGS+=(--register-unsafely-without-email --agree-tos)
+        fi
+
+        CERTBOT_ARGS+=(--non-interactive --keep-until-expiring)
+
+        # Crear webroot de ACME si no existe
+        mkdir -p "${ACME_WEBROOT:-/var/www/letsencrypt}/.well-known/acme-challenge"
+        chmod -R 755 "${ACME_WEBROOT:-/var/www/letsencrypt}"
+
+        # Ejecutar Certbot
+        if ! certbot "${CERTBOT_ARGS[@]}" 2>&1; then
+            error_exit "Certbot no pudo emitir el certificado SSL para ${PRIMARY_DOMAIN}." 20
+        fi
+
+        echo "OK: Certificado emitido correctamente para ${PRIMARY_DOMAIN}."
+        exit 0
+        ;;
+
+    renew-certs)
+        # Renovación de certificados gestionados por Certbot
+        if ! certbot renew --webroot -w "${ACME_WEBROOT:-/var/www/letsencrypt}" --non-interactive --post-hook "systemctl reload nginx" 2>&1; then
+            error_exit "Fallo durante la renovación periódica de certificados." 21
+        fi
+        echo "OK: Proceso de renovación completado."
+        exit 0
+        ;;
+
+    cert-info)
+        if [ $# -ne 1 ]; then
+            error_exit "Uso: $0 cert-info <domain>" 22
+        fi
+        DOMAIN="$1"
+        DOMAIN_REGEX="^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)+$"
+        if [[ "${DOMAIN}" =~ ^- ]] || [[ "${DOMAIN}" == *".."* ]] || ! [[ "${DOMAIN}" =~ ${DOMAIN_REGEX} ]]; then
+            error_exit "Dominio inválido o intento de Path Traversal bloqueado: ${DOMAIN}" 24
+        fi
+        CERT_FILE="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
+        if [ ! -f "${CERT_FILE}" ]; then
+            error_exit "Certificado no encontrado en ${CERT_FILE}" 23
+        fi
+        openssl x509 -in "${CERT_FILE}" -noout -dates -issuer -subject 2>&1
+        exit $?
+        ;;
+
+    *)
+        error_exit "Acción no reconocida: ${ACTION}" 15
+        ;;
+esac
+

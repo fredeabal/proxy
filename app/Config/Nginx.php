@@ -1,0 +1,45 @@
+<?php
+
+namespace Config;
+
+use CodeIgniter\Config\BaseConfig;
+
+class Nginx extends BaseConfig
+{
+    /**
+     * Directorio de configuraciones disponibles.
+     */
+    public string $sitesAvailable = '/etc/nginx/sites-available';
+
+    /**
+     * Directorio de configuraciones activadas (symlinks).
+     */
+    public string $sitesEnabled = '/etc/nginx/sites-enabled';
+
+    /**
+     * Directorio de logs de Nginx.
+     */
+    public string $logsPath = '/var/log/nginx';
+
+    /**
+     * Webroot compartido para validación ACME HTTP-01 de Let's Encrypt.
+     */
+    public string $acmeWebroot = '/var/www/letsencrypt';
+
+    /**
+     * Ruta al binario del ejecutor privilegiado.
+     */
+    public string $executorBinary = '/usr/local/bin/proxy-executor';
+
+    /**
+     * Directorio de pruebas/staging dentro de writable para validación previa.
+     */
+    public string $stagingPath = WRITEPATH . 'staging';
+
+    /**
+     * Si está activado, en entornos donde no existe el ejecutor (ej. macOS/desarrollo local)
+     * se simula la ejecución exitosa de forma segura sin romper la aplicación.
+     */
+    public bool $simulateInDev = true;
+}
+

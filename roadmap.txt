@@ -1,0 +1,422 @@
+Proyecto: Gestor de Proxy Inverso
+1. Descripción del proyecto
+Desarrollar un panel web de administración de proxy inverso inspirado en Nginx Proxy Manager, utilizando CodeIgniter 4 y SQLite.
+
+El sistema permitirá administrar desde una interfaz web los dominios, destinos, configuraciones Nginx y certificados SSL de un único servidor Linux.
+
+Objetivos
+Gestionar múltiples dominios y subdominios.
+Crear y administrar Proxy Hosts.
+Generar configuraciones Nginx automáticamente.
+Gestionar certificados SSL con Let's Encrypt.
+Permitir WebSockets.
+Administrar redirecciones HTTP y HTTPS.
+Consultar logs y estadísticas.
+Disponer de un instalador automático.
+Mantener una arquitectura modular y ampliable.
+
+2. Tecnologías
+
+Componente	Tecnología
+Backend	CodeIgniter 4
+Lenguaje: PHP 8.3+ (PHP 8.5 compatible)
+Base de datos: SQLite (Modo WAL, llaves foráneas activas)
+Frontend: Bootstrap 5 (generado con Google Stitch)
+JavaScript: Vanilla JS
+Servidor proxy: Nginx
+Certificados: Let's Encrypt
+Cliente ACME: Certbot
+Servicios: systemd (Cron / Timers para SSL)
+Gestor de privilegios: Sudoers restringido + Script Wrapper seguro
+Control de versiones: Git / GitHub
+
+3. Arquitectura y Límites de Confianza (Threat Modeling)
+
+El proyecto se ejecutará en un único VPS bajo el principio de mínimos privilegios y defensa en profundidad.
+
+Componentes:
+- Aplicación CodeIgniter (Usuario www-data): interfaz web, autenticación, API y lógica de negocio.
+- SQLite: almacenamiento de configuraciones, fuera del document root web (`writable/database.sqlite`).
+- Nginx: motor de proxy inverso que atiende los puertos 80 y 443 para dominios proxied, y puerto 81 para el panel de administración.
+- Webroot ACME común: `/var/www/letsencrypt/.well-known/acme-challenge/` para validación HTTP-01 sin conflicto.
+- Ejecutor privilegiado restringido (`/usr/local/bin/proxy-executor`): script wrapper ejecutado vía sudo con argumentos estrictos para reload de Nginx y llamadas controladas a Certbot.
+
+Límites de Confianza (Trust Boundaries):
+1. Límite 1: Usuario Web -> CodeIgniter
+   - Amenazas: Inyección SQL, XSS, CSRF, fuerza bruta en login.
+   - Controles: Prepared statements / Query Builder nativo, CSRF protection activado en `Config/Security.php`, CSP headers, rate-limiting / throttling en login.
+2. Límite 2: CodeIgniter -> Plantillas Nginx y Sistema de Archivos
+   - Amenazas: Inyección de directivas Nginx (Nginx config injection mediante saltos de línea `;`, `{`, `}` en nombres de host o headers), Path Traversal en lectura de logs.
+   - Controles: Validación estricta con expresiones regulares (RFC 1123 para hostnames), lista blanca de cabeceras permitidas, validación canónica de rutas (`realpath`) restringida a `/var/log/nginx/`.
+3. Límite 3: CodeIgniter (www-data) -> Ejecutor Privilegiado (root)
+   - Amenazas: Command Injection, elevación de privilegios arbitraria, Argument Injection en Certbot.
+   - Controles: Invocación estricta sin shell libre (`proc_open` con array de argumentos directos hacia `sudo /usr/local/bin/proxy-executor <action> [safe-id]`). El ejecutor valida argumentos contra lista blanca inmutable y descarta cualquier flag arbitrario.
+4. Límite 4: Destinos Proxy -> Red Interna (SSRF)
+   - Amenazas: Peticiones dirigidas a interfaces de loopback, metadatos de cloud (`169.254.169.254`) o puertos sensibles del host no deseados.
+   - Controles: Validación y advertencia o bloqueo de destinos restringidos configurables.
+
+4. Estructura del proyecto
+
+proxy-manager/
+├── app/
+│   ├── Controllers/
+│   │   ├── AuthController.php
+│   │   ├── DashboardController.php
+│   │   ├── ProxyHostController.php
+│   │   ├── CertificateController.php
+│   │   ├── LogController.php
+│   │   └── SettingController.php
+│   │
+│   ├── Models/
+│   │   ├── ProxyHostModel.php
+│   │   ├── CertificateModel.php
+│   │   ├── UserModel.php
+│   │   └── AuditLogModel.php
+│   │
+│   ├── Services/
+│   │   ├── NginxManager.php
+│   │   ├── NginxConfigGenerator.php
+│   │   ├── NginxValidator.php
+│   │   ├── SSLManager.php
+│   │   ├── BackupManager.php
+│   │   └── SystemMonitor.php
+│   │
+│   ├── Database/
+│   │   ├── Migrations/
+│   │   └── Seeds/
+│   │
+│   ├── Filters/
+│   │   └── AuthFilter.php
+│   │
+│   └── Views/
+│       ├── layouts/
+│       │   └── main.php
+│       ├── auth/
+│       │   └── login.php
+│       ├── dashboard/
+│       ├── proxy-hosts/
+│       ├── certificates/
+│       ├── logs/
+│       └── settings/
+│
+├── public/
+│   └── index.php
+├── writable/
+│   ├── database/
+│   │   └── database.sqlite
+│   ├── backups/
+│   └── logs/
+│
+├── executor/
+│   └── proxy-executor.sh
+│
+├── tests/
+├── installer/
+└── README.md
+5. Base de datos SQLite
+Crear las siguientes tablas:
+
+users
+id
+name
+email
+password
+role
+two_factor_secret
+created_at
+updated_at
+proxy_hosts
+id
+domain (dominio principal)
+domain_names (JSON o texto separado por comas para aliases/subdominios)
+scheme
+forward_host
+forward_port
+ssl_enabled
+websocket_enabled
+force_https
+enabled
+custom_headers
+created_at
+updated_at
+certificates
+id
+domain
+certificate_path
+private_key_path
+issuer
+expires_at
+auto_renew
+status
+created_at
+updated_at
+settings
+id
+setting_key
+setting_value
+audit_logs
+id
+user_id
+action
+description
+ip_address
+created_at
+Utilizar migraciones de CodeIgniter 4 y activar claves foráneas y modo WAL de SQLite.
+
+Los logs de tráfico de Nginx se almacenarán en archivos, no en SQLite.
+
+6. Fases de desarrollo
+FASE 1 — Preparación del proyecto y entorno
+Objetivo: tener CodeIgniter 4 y el entorno de desarrollo funcionando bajo estándares de seguridad.
+
+Tareas:
+- Comprobar PHP 8.3+ y extensiones necesarias (sqlite3, pdo_sqlite, intl, mbstring, curl).
+- Comprobar Composer.
+- Crear proyecto CodeIgniter 4 (`codeigniter4/appstarter`).
+- Configurar base de datos SQLite en modo WAL (`writable/database/database.sqlite`).
+- Configurar .gitignore estricto (excluir base de datos SQLite, secretos, archivos .env, logs).
+- Definir entorno de desarrollo local (Docker/VM o entorno local para simular Nginx y Linux).
+- Definir puerto del panel administrativo (Puerto 81 por defecto, configurable en .env).
+- Crear estructura modular (Controllers, Models, Services, Filters).
+Resultado esperado: aplicación CodeIgniter 4 funcional, segura y conectada a SQLite.
+
+FASE 2 — Autenticación y dashboard
+Objetivo: crear el panel de administración privado y protegido contra ataques web.
+
+Tareas:
+- Sistema de Login y Logout con contraseñas hasheadas (password_hash nativo con PASSWORD_DEFAULT/Argon2id).
+- Gestión segura de sesiones (cookies HTTPOnly, SameSite=Lax, Secure en producción).
+- Filtro de autenticación global en rutas privadas (`AuthFilter`).
+- Protección CSRF nativa de CodeIgniter 4 activada en `Config/Security.php`.
+- Rate limiting / Throttler en endpoint de login contra ataques de fuerza bruta (usando Cache / Throttler de CI4).
+- Dashboard con estadísticas y métricas básicas del sistema (CPU, RAM, Disco, Nginx).
+- Menú de navegación y diseño responsive con Bootstrap 5.
+Resultado esperado: panel privado de administración protegido contra accesos no autorizados.
+
+FASE 3 — Gestión de Proxy Hosts
+Objetivo: administrar dominios y destinos con validación estricta de límites de entrada.
+
+Tareas:
+- CRUD completo de Proxy Hosts (crear, listar, editar, eliminar, activar/desactivar).
+- Soporte para dominios múltiples y aliases por host.
+- Validación estricta de nombres de dominio según RFC 1123 (rechazar `;`, espacios, comillas o caracteres no alfanuméricos).
+- Validación de IP/hostname de destino y rango de puertos (1 - 65535).
+- Detección y advertencia de posibles destinos SSRF (metadatos cloud `169.254.169.254`, localhost no intencionado).
+- Opciones de protocolo backend (HTTP / HTTPS).
+- Activación de soporte WebSockets (headers Upgrade y Connection).
+- Opción de redirección forzada a HTTPS.
+Resultado esperado: administración de proxies con sanitización estricta antes de persistir en base de datos.
+
+FASE 4 — Integración con Nginx y Ejecutor Privilegiado
+Objetivo: generación atómica y segura de configuraciones Nginx reales.
+
+Tareas:
+- Crear `NginxConfigGenerator` basado en plantillas fijas y seguras (sin concatenación directa de comandos).
+- Generación de archivos independientes por dominio en directorio staging (`/etc/nginx/sites-available/`).
+- Desarrollo del script wrapper del ejecutor (`/usr/local/bin/proxy-executor`) con sudoers restringido.
+- Acciones permitidas en el ejecutor: `validate-config <file>`, `apply-host <id>`, `remove-host <id>`, `reload-nginx`.
+- Flujo de aplicación atómico y seguro:
+  1. Recibir y validar datos en el panel.
+  2. Generar archivo temporal de configuración.
+  3. Ejecutar prueba de sintaxis (`nginx -t`) mediante el ejecutor.
+  4. Si la validación pasa, habilitar enlace simbólico en `sites-enabled` y recargar Nginx (`systemctl reload nginx`).
+  5. Si falla, abortar, borrar archivo temporal, mantener configuración previa intacta (rollback automático) y registrar error.
+- Manejo de páginas de error amigables por defecto (ej. 502 Bad Gateway cuando el backend no responde).
+Resultado esperado: aplicación de cambios en Nginx en tiempo real sin riesgo de romper el servidor.
+
+FASE 5 — Certificados SSL (Let's Encrypt / ACME)
+Objetivo: automatizar la emisión y renovación HTTPS resolviendo el dilema del reto ACME.
+
+Tareas:
+- Configurar webroot ACME global común en Nginx (`/.well-known/acme-challenge/ -> /var/www/letsencrypt/`).
+- Flujo de emisión en dos pasos:
+  1. Desplegar host en modo HTTP provisional para responder al reto de Let's Encrypt.
+  2. Solicitar certificado mediante Certbot vía el ejecutor: `certbot certonly --webroot -w /var/www/letsencrypt -d <domain> --non-interactive`.
+  3. Comprobar resultado: si Certbot emite el certificado, regenerar plantilla con directivas SSL completas y recargar Nginx.
+  4. Si falla, notificar causa sin comprometer la conectividad HTTP.
+- Evitar inyección de argumentos en Certbot (validar rigurosamente que `<domain>` no contenga flags CLI como `--pre-hook`).
+- Mecanismo de renovación periódica vía cron/systemd timer con post-hook de reload.
+- Visualización de estado, emisor y fecha de caducidad en el panel (consultados mediante helpers seguros).
+Resultado esperado: emisión y renovación transparente de certificados SSL con HTTP-01 sin conflicto.
+
+FASE 6 — Configuración avanzada y Headers
+Objetivo: ofrecer opciones avanzadas manteniendo el control estricto de inyección.
+
+Tareas:
+- Soporte para WebSockets (configuración de `proxy_set_header Upgrade` y `$http_upgrade`).
+- Headers personalizados validados contra lista blanca (ej. HSTS, X-Forwarded-For, X-Real-IP).
+- Configuración de timeouts de proxy (`proxy_connect_timeout`, `proxy_read_timeout`).
+- Tamaño máximo de subida (`client_max_body_size`).
+- Opciones de verificación SSL hacia el backend (proxy_ssl_verify on/off).
+- Prohibición estricta de directivas Nginx arbitrarias o bloques de código libre suministrados por el usuario.
+Resultado esperado: personalización avanzada sin comprometer la seguridad del archivo de configuración.
+
+FASE 7 — Logs y Monitorización
+Objetivo: auditoría y visibilidad del sistema sin riesgos de Path Traversal.
+
+Tareas:
+- Visor de logs de Nginx (access.log y error.log) filtrado por host.
+- Protección estricta contra Path Traversal: validación canónica de rutas (`realpath`) limitadas estrictamente al directorio de logs.
+- Métricas del servidor: uso de CPU, memoria RAM, espacio en disco y uptime.
+- Estado en tiempo real del servicio Nginx (`systemctl is-active nginx`).
+- Registro interno de auditoría (AuditLog): registrar qué usuario realizó cada cambio, fecha, IP y acción.
+Resultado esperado: visualización de estado y trazabilidad completa de acciones y accesos.
+
+FASE 8 — Backups y Recuperación ante Desastres
+Objetivo: garantizar la resiliencia y recuperación del sistema.
+
+Tareas:
+- Copia de seguridad atómica de SQLite utilizando la API `VACUUM INTO` o comando SQLite backup (evitando copias inconsistentes en caliente).
+- Backup de los archivos de configuración de Nginx y certificados.
+- Sistema de restauración con validación previa de integridad antes de aplicar.
+- Retención configurable de copias de seguridad locales.
+- Registro en auditoría de toda operación de backup/restore.
+Resultado esperado: respaldo íntegro y reproducible del estado del proxy.
+
+FASE 9 — Auditoría de Seguridad, Hardening y Pentesting Interno
+Objetivo: validación profunda de límites de confianza (Trust Boundaries) basada en el marco security-audit.
+
+Tareas:
+- Auditoría de los 4 límites de confianza:
+  1. Web/Usuario -> CodeIgniter: pruebas de XSS, CSRF, bypass de autenticación, session fixation.
+  2. CodeIgniter -> Plantillas Nginx: tests de fuzzing e inyección de directivas (caracteres de escape, saltos de línea CRLF).
+  3. CodeIgniter -> Ejecutor: verificación de que el usuario `www-data` no puede ejecutar comandos fuera de la lista blanca bajo ninguna circunstancia.
+  4. Proxy -> Red Interna: validación de filtros SSRF y puertos sensibles.
+- Implementación de 2FA (TOTP) para administradores.
+- Hardening de cabeceras HTTP del panel de administración (Content-Security-Policy, X-Frame-Options, X-Content-Type-Options, Referrer-Policy).
+- Configuración de permisos de archivos en Linux (SQLite 0600, scripts ejecutores propiedad de root:root 0750, logs legibles por grupo audit).
+- Verificación de ausencia de credenciales, llaves privadas o secretos en control de versiones.
+Resultado esperado: sistema blindado con reporte de auditoría interno satisfactorio antes del lanzamiento.
+
+FASE 10 — Instalador automático
+Objetivo: instalar el proyecto en un VPS limpio.
+
+Tareas:
+
+Comprobar versión de linux.
+Comprobar privilegios.
+Instalar dependencias.
+Instalar Nginx.
+Instalar PHP.
+Configurar SQLite.
+Instalar aplicación.
+Crear usuario administrador.
+Configurar servicios.
+Configurar permisos.
+Preparar ejecutor restringido.
+Configurar HTTPS del propio panel.
+Ejecutar comprobaciones finales.
+
+FASE 11 — Pruebas y lanzamiento
+Objetivo: validar el producto.
+
+Pruebas:
+
+Instalación desde cero.
+Login y logout.
+Crear proxy.
+Editar proxy.
+Eliminar proxy.
+Dominios duplicados.
+Puertos inválidos.
+Destinos inaccesibles.
+Configuraciones Nginx incorrectas.
+Emisión SSL.
+Renovación SSL.
+WebSockets.
+Redirecciones.
+Restauración de backups.
+Recuperación ante errores.
+Pruebas de permisos.
+No publicar hasta superar las pruebas de seguridad y recuperación.
+
+7. Interfaz de usuario
+Menú principal:
+
+Dashboard
+Proxy Hosts
+SSL Certificates
+Logs
+Backups
+Settings
+Dashboard
+Mostrar:
+
+Estado de Nginx.
+Número de proxies activos.
+Número de certificados.
+Certificados próximos a caducar.
+Uso de CPU.
+Uso de memoria.
+Espacio disponible.
+Proxy Hosts
+Tabla con:
+
+Dominio.
+Destino.
+Puerto.
+SSL.
+WebSockets.
+Estado.
+Acciones.
+Acciones:
+
+Crear.
+Editar.
+Eliminar.
+Activar.
+Desactivar.
+Consultar configuración.
+8. Plan de trabajo estimado
+
+
+9. Metodología de trabajo con IA
+
+Reglas de desarrollo:
+
+Trabajar una fase cada vez.
+No implementar varios módulos grandes simultáneamente.
+Leer el código existente antes de modificarlo.
+Mantener una arquitectura modular.
+Crear tests para cada funcionalidad.
+No eliminar funcionalidades existentes sin autorización.
+No modificar archivos del sistema sin validación.
+Documentar cambios importantes.
+Revisar errores antes de avanzar.
+Ejecutar las pruebas en una máquina virtual o VPS de pruebas.
+10. Primer objetivo: MVP
+El primer objetivo será conseguir este recorrido completo:
+
+Instalar el panel.
+Acceder al dashboard.
+Crear un Proxy Host.
+Introducir un dominio.
+Introducir IP y puerto de destino.
+Generar configuración Nginx.
+Validar la configuración.
+Activar el proxy.
+Comprobar que el dominio responde.
+Una vez conseguido, añadir certificados SSL y funcionalidades avanzadas.
+
+11. Criterios de calidad
+El producto deberá cumplir estas condiciones:
+
+No perder configuraciones al reiniciar.
+No aplicar configuraciones inválidas.
+No interrumpir otros dominios al modificar un proxy.
+No permitir operaciones privilegiadas arbitrarias.
+Recuperarse ante errores.
+Mantener backups.
+Registrar las operaciones administrativas.
+Gestionar correctamente los certificados.
+Permitir una instalación reproducible.
+12. Resultado final
+Un panel web ligero, rápido y seguro, administrado mediante CodeIgniter 4 y SQLite, que permita gestionar múltiples dominios y aplicaciones a través de Nginx en un único servidor Ubuntu.
+
+El proyecto deberá ser modular, seguro, documentado y preparado para incorporar nuevas funcionalidades sin tener que reconstruir toda la aplicación.
+
+Cómo utilizarlo: guarda el documento como ROADMAP.md en la raíz del proyecto y dáselo a Codex o Claude Code como referencia principal.
+
+Mi consejo es que le pidas ejecutar exclusivamente la Fase 1 y que no avance hasta que hayas probado el resultado. Así evitamos que la IA genere cientos de archivos antes de tener una base sólida.
+
+
