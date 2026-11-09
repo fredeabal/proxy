@@ -210,6 +210,18 @@ EOF
         EXTRA_DOMAINS="${2:-}"
         EMAIL="${3:-}"
 
+        # Si el 2º argumento es un correo electrónico o un guion marcador de posición
+        if [[ "${EXTRA_DOMAINS}" == *"@"* ]] && [ -z "${EMAIL}" ]; then
+            EMAIL="${EXTRA_DOMAINS}"
+            EXTRA_DOMAINS=""
+        elif [ "${EXTRA_DOMAINS}" = "-" ]; then
+            EXTRA_DOMAINS=""
+        fi
+
+        if [ "${EMAIL}" = "-" ]; then
+            EMAIL=""
+        fi
+
         DOMAIN_REGEX="^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)+$"
 
         # Validar dominio principal contra inyección

@@ -70,20 +70,14 @@ class SSLManager
 
         // 2. Invocar emisión vía ejecutor privilegiado
         $executor = $this->config->executorBinary;
-        $aliasesArg = !empty($cleanAliases) ? implode(',', $cleanAliases) : '';
-        $emailArg = $email ?? '';
+        $aliasesArg = !empty($cleanAliases) ? implode(',', $cleanAliases) : '-';
+        $emailArg = ($email !== null && $email !== '') ? $email : '-';
 
         $issuedSuccessfully = false;
         $errorOutput = null;
 
         if (is_file($executor)) {
-            $cmd = ['sudo', $executor, 'issue-cert', $domain];
-            if ($aliasesArg !== '') {
-                $cmd[] = $aliasesArg;
-            }
-            if ($emailArg !== '') {
-                $cmd[] = $emailArg;
-            }
+            $cmd = ['sudo', $executor, 'issue-cert', $domain, $aliasesArg, $emailArg];
 
             $descriptors = [
                 0 => ['pipe', 'r'],
@@ -202,7 +196,7 @@ class SSLManager
         $errorOutput = null;
 
         if (is_file($executor)) {
-            $cmd = ['sudo', $executor, 'issue-cert', $domain];
+            $cmd = ['sudo', $executor, 'issue-cert', $domain, '-', '-'];
             $descriptors = [
                 0 => ['pipe', 'r'],
                 1 => ['pipe', 'w'],
