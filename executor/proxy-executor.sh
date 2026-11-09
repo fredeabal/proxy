@@ -15,7 +15,13 @@ umask 027
 # Directorios permitidos
 SITES_AVAILABLE="${NGINX_SITES_AVAILABLE:-/etc/nginx/sites-available}"
 SITES_ENABLED="${NGINX_SITES_ENABLED:-/etc/nginx/sites-enabled}"
-STAGING_DIR="${NGINX_STAGING_DIR:-/var/www/reverse-proxy/writable/staging}"
+if [ -n "${NGINX_STAGING_DIR:-}" ]; then
+    STAGING_DIR="${NGINX_STAGING_DIR}"
+elif [ -d "/var/www/proxy-manager/writable/staging" ]; then
+    STAGING_DIR="/var/www/proxy-manager/writable/staging"
+else
+    STAGING_DIR="/var/www/reverse-proxy/writable/staging"
+fi
 
 # Función de log de error
 error_exit() {
@@ -62,8 +68,8 @@ case "${ACTION}" in
         ;;
 
     apply-host)
-        if [ $# -ne 1 ]; then
-            error_exit "Uso: $0 apply-host <host_id>" 5
+        if [ $# -lt 1 ]; then
+            error_exit "Uso: $0 apply-host <host_id> [staging_file]" 5
         fi
 
         HOST_ID="$1"
@@ -74,6 +80,26 @@ case "${ACTION}" in
 
         SRC_FILE="${SITES_AVAILABLE}/${HOST_ID}.conf"
         DST_LINK="${SITES_ENABLED}/${HOST_ID}.conf"
+
+        # Si se suministra un archivo staging, copiarlo de forma segura a sites-available
+        if [ $# -ge 2 ]; then
+            STAGING_FILE="$2"
+            REAL_STAGING="$(realpath -q "${STAGING_FILE}" 2>/dev/null || echo "")"
+            if [ -z "${REAL_STAGING}" ] || [ ! -f "${REAL_STAGING}" ]; then
+                error_exit "Archivo de staging no encontrado o no válido." 7
+            fi
+
+            case "${REAL_STAGING}" in
+                "${STAGING_DIR}"/*|/var/www/*/writable/staging/*|/tmp/*|/var/tmp/*)
+                    ;;
+                *)
+                    error_exit "Ruta no autorizada para archivo staging: ${REAL_STAGING}" 8
+                    ;;
+            esac
+
+            cp "${REAL_STAGING}" "${SRC_FILE}"
+            chmod 644 "${SRC_FILE}"
+        fi
 
         if [ ! -f "${SRC_FILE}" ]; then
             error_exit "El archivo origen ${SRC_FILE} no existe." 7

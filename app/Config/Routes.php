@@ -30,6 +30,8 @@ $routes->group('', ['filter' => 'auth'], static function (RouteCollection $route
     $routes->post('proxy-hosts/delete/(:num)', 'ProxyHostController::delete/$1');
     $routes->get('proxy-hosts/preview/(:num)', 'ProxyHostController::preview/$1');
     $routes->post('proxy-hosts/renew-ssl/(:num)', 'ProxyHostController::renewSsl/$1');
+    $routes->post('proxy-hosts/vhost/(:num)', 'ProxyHostController::updateVhost/$1');
+    $routes->post('proxy-hosts/vhost-reset/(:num)', 'ProxyHostController::resetVhost/$1');
     // Redirección y compatibilidad SSL
     $routes->get('certificates', static function () {
         return redirect()->to(base_url('proxy-hosts'));

@@ -1,69 +1,216 @@
-# CodeIgniter 4 Application Starter
+# 🚀 Reverse Proxy Manager
 
-## What is CodeIgniter?
+Un panel de control web moderno, ágil y seguro para administrar servidores proxy inverso con **Nginx**, certificados SSL automáticos con **Let's Encrypt (Certbot)**, listas de acceso, seguridad reforzada y soporte para configuraciones avanzadas. Desarrollado con **CodeIgniter 4**, **PHP 8.2+** y **SQLite3**.
 
-CodeIgniter is a PHP full-stack web framework that is light, fast, flexible and secure.
-More information can be found at the [official site](https://codeigniter.com).
+---
 
-This repository holds a composer-installable app starter.
-It has been built from the
-[development repository](https://github.com/codeigniter4/CodeIgniter4).
+## 🌟 Características Principales
 
-More information about the plans for version 4 can be found in [CodeIgniter 4](https://forum.codeigniter.com/forumdisplay.php?fid=28) on the forums.
+- **Gestión Intuitiva de Proxy Hosts**:
+  - Mapeo de dominios hacia puertos e IPs internas o servicios en contenedores (Docker/LXC).
+  - Soporte nativo para WebSockets (`Upgrade` / `Connection` headers).
+  - Redirección forzada a HTTPS (Force SSL) y soporte para HTTP/2.
+  - Protección HSTS (*HTTP Strict Transport Security*) con soporte para subdominios y preload.
+  - Caché de recursos estáticos (*Assets Cache*) configurable.
+  - Bloqueo de exploits y vectores de ataque comunes (SQLi, directory traversal, etc.).
+  - Configuración personalizada de Nginx (*Custom vhost / location blocks*).
+  - Generador de cabeceras personalizadas (*Custom HTTP Headers*).
+- **Gestión de Certificados SSL/TLS**:
+  - Emisión y renovación automática de certificados gratuitos mediante **Let's Encrypt** (desafíos HTTP-01).
+  - Soporte para subida y administración de certificados SSL personalizados (clave privada y certificado).
+- **Seguridad Robusta**:
+  - Autenticación multifactor (**2FA / TOTP**) con escaneo de código QR.
+  - Ejecutor privilegiado aislado (`proxy-executor`): la aplicación web corre bajo el usuario sin privilegios `www-data` y delega las operaciones sensibles de Nginx/Certbot a un script sudoer auditado y restringido.
+  - Modo SQLite en WAL (*Write-Ahead Logging*) con verificación de integridad.
+- **Respaldos y Mantenimiento**:
+  - Sistema de backups automáticos y restauración de base de datos y configuraciones.
+  - Monitoreo en tiempo real de servicios y métricas de carga del servidor.
+  - Script de instalación y actualización automática en un solo comando.
 
-You can read the [user guide](https://codeigniter.com/user_guide/)
-corresponding to the latest version of the framework.
+---
 
-## Installation & updates
+## 📋 Requisitos del Sistema
 
-`composer create-project codeigniter4/appstarter` then `composer update` whenever
-there is a new release of the framework.
+- **Sistema Operativo:** Ubuntu 22.04 / 24.04 LTS o Debian 11 / 12 (arquitectura x86_64 o ARM64).
+- **Privilegios:** Acceso root o sudo.
+- **Puertos de Red:**
+  - `80` (HTTP - Requerido para tráfico web y validación de certificados Let's Encrypt).
+  - `443` (HTTPS - Requerido para tráfico seguro).
+  - `81` (o el puerto configurado para acceder al panel de administración).
 
-When updating, check the release notes to see if there are any changes you might need to apply
-to your `app` folder. The affected files can be copied or merged from
-`vendor/codeigniter4/framework/app`.
+---
 
-## Setup
+## ⚡ Instalación Rápida (Recomendada)
 
-Copy `env` to `.env` and tailor for your app, specifically the baseURL
-and any database settings.
+Ejecuta el siguiente comando en tu servidor con privilegios de root:
 
-## Important Change with index.php
+```bash
+curl -sSL https://raw.githubusercontent.com/fredeabal/proxy/main/install.sh | sudo bash
+```
 
-`index.php` is no longer in the root of the project! It has been moved inside the *public* folder,
-for better security and separation of components.
+El script interactivo te solicitará:
+1. **IP o Dominio del servidor:** Por defecto detecta la IP pública/local.
+2. **Puerto de acceso al panel:** Por defecto `81`.
 
-This means that you should configure your web server to "point" to your project's *public* folder, and
-not to the project root. A better practice would be to configure a virtual host to point there. A poor practice would be to point your web server to the project root and expect to enter *public/...*, as the rest of your logic and the
-framework are exposed.
+El instalador configurará automáticamente:
+- Dependencias (PHP 8.2+, Nginx, SQLite3, Certbot, Composer).
+- Directorio de la aplicación en `/var/www/proxy-manager`.
+- Archivo de entorno `.env` y clave de cifrado.
+- Base de datos SQLite, migraciones y usuario administrador inicial.
+- Regla segura de sudoers para `/usr/local/bin/proxy-executor`.
+- VirtualHost de Nginx para el panel de administración.
 
-**Please** read the user guide for a better explanation of how CI4 works!
+---
 
-## Repository Management
+## 🔑 Credenciales por Defecto
 
-We use GitHub issues, in our main repository, to track **BUGS** and to track approved **DEVELOPMENT** work packages.
-We use our [forum](http://forum.codeigniter.com) to provide SUPPORT and to discuss
-FEATURE REQUESTS.
+Una vez completada la instalación, ingresa desde tu navegador a:
+`http://TU_IP_O_DOMINIO:81`
 
-This repository is a "distribution" one, built by our release preparation script.
-Problems with it can be raised on our forum, or as issues in the main repository.
+- **Usuario:** `admin@demo.com`
+- **Contraseña:** `admin123`
 
-## Server Requirements
+> ⚠️ **IMPORTANTE:** Por seguridad, cambia la contraseña inmediatamente desde el apartado de **Configuración / Perfil** y activa la **autenticación en dos pasos (2FA)**.
 
-PHP version 8.2 or higher is required, with the following extensions installed:
+---
 
-- [intl](http://php.net/manual/en/intl.requirements.php)
-- [mbstring](http://php.net/manual/en/mbstring.installation.php)
+## 🛠️ Instalación Manual
 
-> [!WARNING]
-> - The end of life date for PHP 7.4 was November 28, 2022.
-> - The end of life date for PHP 8.0 was November 26, 2023.
-> - The end of life date for PHP 8.1 was December 31, 2025.
-> - If you are still using below PHP 8.2, you should upgrade immediately.
-> - The end of life date for PHP 8.2 will be December 31, 2026.
+Si prefieres instalar y configurar el proyecto paso a paso:
 
-Additionally, make sure that the following extensions are enabled in your PHP:
+1. **Instalar paquetes del sistema:**
+   ```bash
+   sudo apt update
+   sudo apt install -y nginx git unzip curl sqlite3 \
+       certbot python3-certbot-nginx \
+       php-fpm php-cli php-sqlite3 php-curl php-intl php-mbstring php-xml php-zip
+   ```
 
-- json (enabled by default - don't turn it off)
-- [mysqlnd](http://php.net/manual/en/mysqlnd.install.php) if you plan to use MySQL
-- [libcurl](http://php.net/manual/en/curl.requirements.php) if you plan to use the HTTP\CURLRequest library
+2. **Clonar el repositorio:**
+   ```bash
+   sudo git clone https://github.com/fredeabal/proxy.git /var/www/proxy-manager
+   cd /var/www/proxy-manager
+   ```
+
+3. **Instalar dependencias con Composer:**
+   ```bash
+   sudo composer install --no-dev --optimize-autoloader
+   ```
+
+4. **Configurar el entorno:**
+   ```bash
+   cp env .env
+   php spark key:generate --force
+   ```
+   Edita `.env` para configurar tu `app.baseURL` y la ruta de la base de datos SQLite:
+   ```ini
+   CI_ENVIRONMENT = production
+   app.baseURL = 'http://tu-servidor:81/'
+   database.default.database = '/var/www/proxy-manager/writable/database/database.sqlite'
+   database.default.DBDriver = 'SQLite3'
+   ```
+
+5. **Ejecutar migraciones y semilla de datos:**
+   ```bash
+   sudo php spark migrate --all
+   sudo php spark db:seed AdminSeeder
+   ```
+
+6. **Configurar el ejecutor seguro:**
+   ```bash
+   sudo cp executor/proxy-executor.sh /usr/local/bin/proxy-executor
+   sudo chown root:root /usr/local/bin/proxy-executor
+   sudo chmod 0750 /usr/local/bin/proxy-executor
+
+   echo "www-data ALL=(root) NOPASSWD: /usr/local/bin/proxy-executor" | sudo tee /etc/sudoers.d/proxy-manager
+   sudo chmod 0440 /etc/sudoers.d/proxy-manager
+   ```
+
+7. **Configurar permisos de archivos:**
+   ```bash
+   sudo mkdir -p /var/www/letsencrypt/.well-known/acme-challenge
+   sudo chown -R www-data:www-data /var/www/letsencrypt
+   sudo chown -R www-data:www-data /var/www/proxy-manager
+   sudo chmod -R 770 /var/www/proxy-manager/writable
+   ```
+
+---
+
+## 🔄 Actualización
+
+Para actualizar a la última versión disponible sin perder configuraciones ni certificados:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/fredeabal/proxy/main/update.sh | sudo bash
+```
+
+O si ya estás dentro del servidor:
+```bash
+cd /var/www/proxy-manager
+sudo bash update.sh
+```
+
+El actualizador se encarga de:
+- Descargar los últimos cambios del repositorio.
+- Actualizar dependencias de PHP.
+- Ejecutar migraciones pendientes de base de datos.
+- Actualizar el ejecutor privilegiado `/usr/local/bin/proxy-executor`.
+- Limpiar cachés y reiniciar servicios de PHP-FPM y Nginx.
+
+---
+
+## 🔒 Arquitectura de Seguridad
+
+```
++-------------------------------------------------------------+
+|                     Usuario / Navegador                     |
++------------------------------+------------------------------+
+                               |
+                        (Puerto 81 / HTTP)
+                               v
++-------------------------------------------------------------+
+|                     Nginx (Proxy Manager)                   |
++------------------------------+------------------------------+
+                               | FastCGI
+                               v
++-------------------------------------------------------------+
+|              PHP-FPM (Usuario: www-data)                    |
+|       CodeIgniter 4 + SQLite3 (Base de datos local)         |
++------------------------------+------------------------------+
+                               | sudo (NOPASSWD)
+                               v
++-------------------------------------------------------------+
+|       /usr/local/bin/proxy-executor (Usuario: root)         |
+|  - Valida sintaxis con 'nginx -t'                           |
+|  - Despliega vhosts en /etc/nginx/sites-available           |
+|  - Ejecuta Certbot para emisión/renovación Let's Encrypt    |
+|  - Recarga Nginx de manera atómica                          |
++-------------------------------------------------------------+
+```
+
+---
+
+## 📂 Estructura del Proyecto
+
+```
+proxy-manager/
+├── app/
+│   ├── Config/           # Configuraciones generales y rutas
+│   ├── Controllers/      # Controladores MVC (Proxy Hosts, Auth, Certificados, etc.)
+│   ├── Database/         # Migraciones y semillas de SQLite
+│   ├── Models/           # Modelos de datos
+│   ├── Services/         # Servicio NginxManager y utilidades
+│   └── Views/            # Plantillas de vistas e interfaces de usuario
+├── executor/
+│   └── proxy-executor.sh # Script ejecutor de comandos del sistema
+├── install.sh            # Script de instalación desatendida
+├── update.sh             # Script de actualización automática
+├── public/               # Raíz pública (assets, css, js, index.php)
+└── writable/             # Logs, caché, respaldos y base de datos SQLite
+```
+
+---
+
+## 📄 Licencia
+
+Este proyecto está bajo la Licencia **MIT**. Consulta el archivo `LICENSE` para más información.

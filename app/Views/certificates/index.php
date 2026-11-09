@@ -198,26 +198,28 @@
                 <!-- Renovación Automática -->
                 <td class="text-center">
                   <?php if ($cert['auto_renew']): ?>
-                    <span class="badge bg-primary-subtle text-primary border border-primary d-inline-flex align-items-center gap-1">
+                    <span class="badge badge-table bg-primary-subtle text-primary border border-primary">
                       <i class="ti ti-refresh"></i> Auto
                     </span>
                   <?php else: ?>
-                    <span class="badge bg-secondary-subtle text-secondary border border-secondary">Manual</span>
+                    <span class="badge badge-table bg-secondary-subtle text-secondary border border-secondary">
+                      Manual
+                    </span>
                   <?php endif; ?>
                 </td>
 
                 <!-- Estado -->
                 <td class="text-center">
                   <?php if ($statusKey === 'valid'): ?>
-                    <span class="badge bg-success-subtle text-success border border-success d-inline-flex align-items-center gap-1">
+                    <span class="badge badge-table-wide bg-success-subtle text-success border border-success">
                       <i class="ti ti-shield-check"></i> Válido
                     </span>
                   <?php elseif ($statusKey === 'expiring_soon'): ?>
-                    <span class="badge bg-warning-subtle text-warning border border-warning d-inline-flex align-items-center gap-1">
+                    <span class="badge badge-table-wide bg-warning-subtle text-warning border border-warning">
                       <i class="ti ti-alert-triangle"></i> Por Caducar
                     </span>
                   <?php else: ?>
-                    <span class="badge bg-danger-subtle text-danger border border-danger d-inline-flex align-items-center gap-1">
+                    <span class="badge badge-table-wide bg-danger-subtle text-danger border border-danger">
                       <i class="ti ti-shield-x"></i> Caducado
                     </span>
                   <?php endif; ?>

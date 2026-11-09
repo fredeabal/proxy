@@ -65,7 +65,7 @@
 </div>
 
 <!-- 1. Vista de Escritorio / Tablet: Tabla Responsiva con Buscador Integrado (d-none d-md-block) -->
-<div class="card border shadow-none mb-0 w-100 d-none d-md-block">
+<div class="card border shadow-none mb-4 w-100 d-none d-md-block" id="proxyHostsCard">
   <!-- Filtros y Búsqueda en Tiempo Real dentro del card de la tabla -->
   <div class="card-body p-3 border-bottom">
     <div class="row g-2 align-items-center">
@@ -172,18 +172,20 @@
                 <!-- SSL -->
                 <td class="text-center">
                   <?php if ($item['ssl_enabled']): ?>
-                    <span class="badge bg-success-subtle text-success border border-success d-inline-flex align-items-center gap-1">
+                    <span class="badge badge-table bg-success-subtle text-success border border-success">
                       <i class="ti ti-lock"></i> Activo
                     </span>
                   <?php else: ?>
-                    <span class="badge bg-secondary-subtle text-secondary border border-secondary">Inactivo</span>
+                    <span class="badge badge-table bg-secondary-subtle text-secondary border border-secondary">
+                      <i class="ti ti-lock-off"></i> Inactivo
+                    </span>
                   <?php endif; ?>
                 </td>
 
                 <!-- Redirect -->
                 <td class="text-center">
                   <?php if ($item['force_https']): ?>
-                    <span class="badge bg-primary-subtle text-primary border border-primary d-inline-flex align-items-center gap-1">
+                    <span class="badge badge-table bg-primary-subtle text-primary border border-primary">
                       <i class="ti ti-arrow-right"></i> Sí
                     </span>
                   <?php else: ?>
@@ -194,7 +196,7 @@
                 <!-- WebSockets -->
                 <td class="text-center">
                   <?php if ($item['websocket_enabled']): ?>
-                    <span class="badge bg-warning-subtle text-warning border border-warning d-inline-flex align-items-center gap-1">
+                    <span class="badge badge-table bg-warning-subtle text-warning border border-warning">
                       <i class="ti ti-bolt"></i> WS On
                     </span>
                   <?php else: ?>
@@ -216,6 +218,11 @@
                       <li>
                         <a class="dropdown-item d-flex align-items-center gap-2" href="<?= base_url('proxy-hosts/edit/' . $item['id']) ?>">
                           <i class="ti ti-pencil fs-4"></i> Editar
+                        </a>
+                      </li>
+                      <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="<?= base_url('proxy-hosts/edit/' . $item['id']) ?>#tab-vhost">
+                          <i class="ti ti-file-code fs-4"></i> Vhost Nginx
                         </a>
                       </li>
                       <li>
@@ -342,6 +349,11 @@
                 <li>
                   <a class="dropdown-item d-flex align-items-center gap-2" href="<?= base_url('proxy-hosts/edit/' . $item['id']) ?>">
                     <i class="ti ti-pencil fs-4"></i> Editar
+                  </a>
+                </li>
+                <li>
+                  <a class="dropdown-item d-flex align-items-center gap-2" href="<?= base_url('proxy-hosts/edit/' . $item['id']) ?>#tab-vhost">
+                    <i class="ti ti-file-code fs-4"></i> Vhost Nginx
                   </a>
                 </li>
                 <li>

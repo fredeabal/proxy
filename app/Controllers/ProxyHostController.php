@@ -106,7 +106,7 @@ class ProxyHostController extends BaseController
             'allowedHeaders'  => array_values(array_unique(array_column(ProxyHostRules::ALLOWED_CUSTOM_HEADERS, 'name'))),
             'combinedDomains' => old('domain', ''),
             'isEdit'          => false,
-            'extraScripts'    => ['assets/js/proxy-wizard.js'],
+            'extraScripts'    => ['assets/js/proxy-form.js'],
         ];
 
         return view('template/header', $data)
@@ -228,17 +228,26 @@ class ProxyHostController extends BaseController
 
         $combinedDefault = $proxy['domain'] . (!empty($proxy['domain_names']) ? ', ' . $proxy['domain_names'] : '');
         $certificate = $this->certModel->where('domain', $proxy['domain'])->first();
+        $vhostConfig = $this->nginxManager->previewConfig($proxy);
+
+        $hostDomain = strtolower(trim((string) $proxy['domain']));
+        $allCertificates = $this->certModel->orderBy('domain', 'ASC')->findAll();
+        // Solo listar certificados que cubran el dominio de este host
+        $matchingCertificates = array_values(array_filter($allCertificates, function ($cert) use ($hostDomain) {
+            return $this->doesCertificateCoverDomain((string) $cert['domain'], $hostDomain);
+        }));
 
         $data = [
             'title'           => 'Editar Proxy Host',
             'activeMenu'      => 'proxy-hosts',
             'proxy'           => $proxy,
             'certificate'     => $certificate,
-            'certificates'    => $this->certModel->orderBy('domain', 'ASC')->findAll(),
+            'certificates'    => $matchingCertificates,
             'allowedHeaders'  => array_values(array_unique(array_column(ProxyHostRules::ALLOWED_CUSTOM_HEADERS, 'name'))),
             'combinedDomains' => old('domain', $combinedDefault),
             'isEdit'          => true,
-            'extraScripts'    => ['assets/js/proxy-wizard.js'],
+            'vhostConfig'     => $vhostConfig,
+            'extraScripts'    => ['assets/js/proxy-form.js'],
         ];
 
         return view('template/header', $data)
@@ -470,6 +479,101 @@ class ProxyHostController extends BaseController
     }
 
     /**
+     * Actualiza directamente el archivo Vhost de Nginx (estilo CloudPanel) con validación atómica `nginx -t`.
+     */
+    public function updateVhost(int $id): ResponseInterface
+    {
+        $proxy = $this->proxyModel->find($id);
+        if (!$proxy) {
+            return $this->response->setStatusCode(404)->setJSON([
+                'success' => false,
+                'message' => 'Proxy Host no encontrado.',
+            ]);
+        }
+
+        $vhostContent = (string) $this->request->getPost('vhost');
+        if (trim($vhostContent) === '') {
+            return $this->response->setStatusCode(422)->setJSON([
+                'success' => false,
+                'message' => 'El contenido del Vhost no puede estar vacío.',
+            ]);
+        }
+
+        $isEnabled = !empty($proxy['enabled']);
+        $result = $this->nginxManager->applyVhost($id, $vhostContent, $isEnabled);
+
+        if (!$result['success']) {
+            AuditLogModel::log(
+                'proxy_vhost_error',
+                "Error al guardar Vhost Nginx para [ID: {$id}] {$proxy['domain']}: " . ($result['error'] ?? 'Desconocido')
+            );
+
+            return $this->response->setStatusCode(422)->setJSON([
+                'success' => false,
+                'message' => $result['error'] ?? 'La sintaxis de Nginx es inválida.',
+                'output'  => $result['output'] ?? '',
+            ]);
+        }
+
+        // Guardar custom_vhost en la base de datos
+        $this->proxyModel->update($id, [
+            'custom_vhost' => $vhostContent,
+        ]);
+
+        AuditLogModel::log(
+            'proxy_vhost_update',
+            "Vhost Nginx personalizado aplicado para [ID: {$id}] {$proxy['domain']}"
+        );
+
+        return $this->response->setJSON([
+            'success' => true,
+            'message' => 'Configuración de Nginx (Vhost) validada y aplicada con éxito.',
+        ]);
+    }
+
+    /**
+     * Restablece el Vhost Nginx a la plantilla automática predeterminada basada en los campos visuales.
+     */
+    public function resetVhost(int $id): ResponseInterface
+    {
+        $proxy = $this->proxyModel->find($id);
+        if (!$proxy) {
+            return $this->response->setStatusCode(404)->setJSON([
+                'success' => false,
+                'message' => 'Proxy Host no encontrado.',
+            ]);
+        }
+
+        // Limpiar custom_vhost en la base de datos
+        $this->proxyModel->update($id, [
+            'custom_vhost' => null,
+        ]);
+
+        $proxy['custom_vhost'] = null;
+        $result = $this->nginxManager->applyHost($proxy);
+
+        if (!$result['success']) {
+            return $this->response->setStatusCode(500)->setJSON([
+                'success' => false,
+                'message' => 'Error al restablecer Vhost: ' . ($result['error'] ?? 'Desconocido'),
+            ]);
+        }
+
+        AuditLogModel::log(
+            'proxy_vhost_reset',
+            "Vhost Nginx restablecido a la plantilla estándar para [ID: {$id}] {$proxy['domain']}"
+        );
+
+        $freshVhost = $this->nginxManager->previewConfig($proxy);
+
+        return $this->response->setJSON([
+            'success' => true,
+            'message' => 'Vhost Nginx restablecido a la plantilla estándar con éxito.',
+            'vhost'   => $freshVhost,
+        ]);
+    }
+
+    /**
      * Interpreta el selector de certificado SSL del formulario (estilo NPM / CloudPanel).
      *
      * Valores de `ssl_certificate`: "none" | "new" | <id de certificado existente>.
@@ -532,7 +636,7 @@ class ProxyHostController extends BaseController
      * Comprueba si el dominio de un certificado SSL cubre el dominio del Proxy Host
      * (coincidencia exacta, variante www o certificado wildcard *.dominio.com).
      */
-    protected function doesCertificateCoverDomain(string $certDomain, string $hostDomain): bool
+    public function doesCertificateCoverDomain(string $certDomain, string $hostDomain): bool
     {
         $certDomain = strtolower(trim($certDomain));
         $hostDomain = strtolower(trim($hostDomain));

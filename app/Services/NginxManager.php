@@ -50,6 +50,19 @@ class NginxManager
      */
     public function previewConfig(array $proxy): string
     {
+        if (!empty($proxy['custom_vhost'])) {
+            return trim((string) $proxy['custom_vhost']);
+        }
+
+        $id = (int) ($proxy['id'] ?? 0);
+        $destFile = rtrim($this->config->sitesAvailable, '/') . "/{$id}.conf";
+        if ($id > 0 && is_readable($destFile)) {
+            $content = @file_get_contents($destFile);
+            if ($content !== false && trim($content) !== '') {
+                return $content;
+            }
+        }
+
         return $this->generator->generate($proxy);
     }
 
@@ -71,16 +84,20 @@ class NginxManager
             ];
         }
 
-        // 1. Generar configuración
-        try {
-            $configContent = $this->generator->generate($proxy);
-        } catch (\Throwable $e) {
-            return [
-                'success' => false,
-                'error'   => 'Error en generación de configuración: ' . $e->getMessage(),
-                'output'  => null,
-                'config'  => null,
-            ];
+        // 1. Generar o tomar configuración
+        if (!empty($proxy['custom_vhost'])) {
+            $configContent = trim((string) $proxy['custom_vhost']);
+        } else {
+            try {
+                $configContent = $this->generator->generate($proxy);
+            } catch (\Throwable $e) {
+                return [
+                    'success' => false,
+                    'error'   => 'Error en generación de configuración: ' . $e->getMessage(),
+                    'output'  => null,
+                    'config'  => null,
+                ];
+            }
         }
 
         // 2. Validación estructural
@@ -137,7 +154,7 @@ class NginxManager
         $isEnabled = !empty($proxy['enabled']);
         $action = $isEnabled ? 'apply-host' : 'disable-host';
 
-        $execResult = $this->callExecutor($action, [(string) $id], $tempFile, $destFile, $isEnabled);
+        $execResult = $this->callExecutor($action, [(string) $id, $tempFile], $tempFile, $destFile, $isEnabled);
 
         // Limpiar archivo temporal de staging
         @unlink($tempFile);
@@ -156,6 +173,81 @@ class NginxManager
             'error'   => null,
             'output'  => $execResult['output'],
             'config'  => $configContent,
+        ];
+    }
+
+    /**
+     * Valida y aplica una configuración Vhost personalizada escrita directamente por el usuario (estilo CloudPanel).
+     *
+     * @param int $id ID del proxy host
+     * @param string $vhostContent Contenido completo del Vhost Nginx
+     * @param bool $isEnabled Si el host debe quedar activo o deshabilitado
+     * @return array{success: bool, error: ?string, output: ?string}
+     */
+    public function applyVhost(int $id, string $vhostContent, bool $isEnabled = true): array
+    {
+        $vhostContent = trim($vhostContent);
+        if ($vhostContent === '') {
+            return [
+                'success' => false,
+                'error'   => 'El contenido del Vhost no puede estar vacío.',
+                'output'  => null,
+            ];
+        }
+
+        // 1. Validación estructural
+        $struct = $this->validator->validateStructure($vhostContent);
+        if (!$struct['valid']) {
+            return [
+                'success' => false,
+                'error'   => 'Validación estructural fallida: ' . $struct['error'],
+                'output'  => null,
+            ];
+        }
+
+        // 2. Escribir a staging
+        $tempFile = rtrim($this->config->stagingPath, '/') . "/vhost_{$id}_" . time() . '.conf.tmp';
+        if (@file_put_contents($tempFile, $vhostContent) === false) {
+            return [
+                'success' => false,
+                'error'   => 'No se pudo escribir el archivo temporal en el directorio de staging.',
+                'output'  => null,
+            ];
+        }
+
+        // 3. Validación de sintaxis
+        $fileValid = $this->validator->validateFile($tempFile);
+        if (!$fileValid['valid']) {
+            @unlink($tempFile);
+            return [
+                'success' => false,
+                'error'   => 'Error de sintaxis Nginx: ' . ($fileValid['error'] ?? 'Sintaxis inválida.'),
+                'output'  => $fileValid['output'] ?? '',
+            ];
+        }
+
+        // 4. Copiar y activar
+        $destFile = rtrim($this->config->sitesAvailable, '/') . "/{$id}.conf";
+        if (is_writable($this->config->sitesAvailable) || is_writable(dirname($destFile))) {
+            @file_put_contents($destFile, $vhostContent);
+        }
+
+        $action = $isEnabled ? 'apply-host' : 'disable-host';
+        $execResult = $this->callExecutor($action, [(string) $id, $tempFile], $tempFile, $destFile, $isEnabled);
+        @unlink($tempFile);
+
+        if (!$execResult['success']) {
+            return [
+                'success' => false,
+                'error'   => $execResult['error'],
+                'output'  => $execResult['output'],
+            ];
+        }
+
+        return [
+            'success' => true,
+            'error'   => null,
+            'output'  => $execResult['output'],
         ];
     }
 

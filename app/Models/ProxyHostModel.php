@@ -30,6 +30,7 @@ class ProxyHostModel extends Model
         'client_max_body_size',
         'proxy_ssl_verify',
         'hsts_enabled',
+        'custom_vhost',
     ];
 
     protected bool $allowEmptyInserts = false;

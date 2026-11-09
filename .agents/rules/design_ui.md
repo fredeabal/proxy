@@ -82,9 +82,9 @@ Este documento define las directrices visuales, estéticas, de diseño y de Expe
 5. **Badges en Tablas y Listas Transparentes con Borde del Color del Texto:**
    - Todos los badges en tablas y listas (`Habilitado`, `Deshabilitado`, `SSL Activo`, `Inactivo`, `WS On`, `Aliases`, `local`, etc.) deben usar fondos sutiles y transparentes (`bg-*-subtle` con opacidad $\sim 12\%$) y **borde exacto del mismo color del texto** (`border: 1px solid currentColor` o el tono vivo de la tipografía, sin opacidad desvaída).
    - Prohibido el uso de badges con fondos sólidos u opacos (como `bg-success text-white`) en las tablas o listas.
-5. **Badges en Tablas y Listas Transparentes con Borde del Color del Texto:**
-   - Todos los badges en tablas y listas (`Habilitado`, `Deshabilitado`, `SSL Activo`, `Inactivo`, `WS On`, `Aliases`, `local`, etc.) deben usar fondos sutiles y transparentes (`bg-*-subtle` con opacidad $\sim 12\%$) y **borde exacto del mismo color del texto** (`border: 1px solid currentColor` o el tono vivo de la tipografía, sin opacidad desvaída).
-   - Prohibido el uso de badges con fondos sólidos u opacos (como `bg-success text-white`) en las tablas o listas.
+6. **Badges del Mismo Tamaño (Homogeneidad Geométrica Universal):**
+   - Todos los badges de estado e indicadores dentro de columnas de tablas (`SSL`, `Redirect`, `WebSockets`, `Estado`, `Renovación`, etc.) deben tener **estrictamente el mismo tamaño y proporciones geométricas idénticas** (`.badge-table`: ancho fijo `5.25rem` / ~84px, altura uniforme `24px`, con `display: inline-flex; align-items: center; justify-content: center; text-align: center;`).
+   - Prohibido tener badges de anchos dispares dentro de la misma columna o entre columnas hermanas (por ejemplo, un badge de "Sí" estrecho junto a un badge de "Activo" ancho). Para textos compuestos más largos (como `Por Caducar`), utilizar la variante `.badge-table-wide` (`6.25rem`).
 
 ---
 

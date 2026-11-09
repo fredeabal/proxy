@@ -201,6 +201,9 @@ select, option {
     font-size: 0.9rem !important;
     color: var(--bs-body-color) !important;
 }
+.select2-container--default .select2-results__option[aria-disabled="true"] {
+    display: none !important;
+}
 [data-bs-theme="dark"] .select2-container--default .select2-results__option {
     color: #cbd5e1 !important;
 }
@@ -385,6 +388,54 @@ select, option {
     text-transform: lowercase !important;
     display: inline-flex !important;
     align-items: center !important;
+}
+
+/* Badges de estado e indicadores en tablas con tamaño homogéneo universal */
+.badge-table,
+.badge-status,
+.table td .badge-table,
+.table td .badge-status {
+    width: 5.25rem !important;
+    min-width: 5.25rem !important;
+    max-width: 5.25rem !important;
+    height: 24px !important;
+    min-height: 24px !important;
+    max-height: 24px !important;
+    line-height: 1 !important;
+    padding: 0 0.45rem !important;
+    font-size: 0.6875rem !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    box-sizing: border-box !important;
+    gap: 0.25rem !important;
+}
+
+/* Variante ligeramente más ancha para textos compuestos como 'Por Caducar' */
+.badge-table-wide,
+.table td .badge-table-wide {
+    width: 6.25rem !important;
+    min-width: 6.25rem !important;
+    max-width: 6.25rem !important;
+    height: 24px !important;
+    min-height: 24px !important;
+    max-height: 24px !important;
+    line-height: 1 !important;
+    padding: 0 0.45rem !important;
+    font-size: 0.6875rem !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    box-sizing: border-box !important;
+    gap: 0.25rem !important;
 }
 
 /* Evitar forma de píldora exagerada en todo el sistema según Regla 6 */
@@ -2622,17 +2673,32 @@ span.badge,
 #adminTabsContent {
     padding-bottom: 6rem;
 }
-#backupsManagerCard {
+#backupsManagerCard,
+#proxyHostsCard {
     overflow: visible;
 }
 @media (min-width: 768px) {
     #tab-backups .table-responsive,
-    #tab-audit .table-responsive {
-        overflow: visible;
+    #tab-audit .table-responsive,
+    #proxyHostsCard .table-responsive {
+        overflow: visible !important;
     }
 }
 #tab-backups .table-responsive {
     min-height: 14rem;
+}
+#proxyHostsCard .table-responsive {
+    min-height: 16rem;
+}
+
+/* Stacking context dinámico: la fila o tarjeta con el menú abierto se eleva automáticamente */
+.table tr:has(.dropdown-menu.show),
+.proxy-card-item:has(.dropdown-menu.show) {
+    position: relative;
+    z-index: 1055 !important;
+}
+.table .dropdown-menu {
+    z-index: 1060 !important;
 }
 
 /* =========================================================================
@@ -2663,4 +2729,32 @@ span.badge,
     display: flex;
     align-items: center;
     gap: 0.5rem;
+}
+
+/* Editor de Vhost Nginx estilo CloudPanel */
+.nginx-vhost-editor {
+    background-color: #0b1114 !important;
+    color: #38bdf8 !important;
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+    font-size: 0.84375rem !important;
+    line-height: 1.6 !important;
+    tab-size: 4 !important;
+    border: 1px solid #374853 !important;
+    border-radius: 8px !important;
+    min-height: 480px !important;
+    resize: vertical !important;
+    outline: none !important;
+}
+
+.nginx-vhost-editor:focus {
+    border-color: #0284c7 !important;
+    box-shadow: 0 0 0 0.2rem rgba(2, 132, 199, 0.25) !important;
+}
+
+
+
+[data-bs-theme="dark"] .input-group-text {
+    background-color: #17212b !important;
+    border-color: #273441 !important;
+    color: #94a3b8 !important;
 }
