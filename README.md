@@ -120,7 +120,7 @@ Si prefieres instalar y configurar el proyecto paso a paso:
    ```bash
    sudo cp executor/proxy-executor.sh /usr/local/bin/proxy-executor
    sudo chown root:root /usr/local/bin/proxy-executor
-   sudo chmod 0750 /usr/local/bin/proxy-executor
+   sudo chmod 0755 /usr/local/bin/proxy-executor
 
    echo "www-data ALL=(root) NOPASSWD: /usr/local/bin/proxy-executor" | sudo tee /etc/sudoers.d/proxy-manager
    sudo chmod 0440 /etc/sudoers.d/proxy-manager

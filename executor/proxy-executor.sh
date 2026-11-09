@@ -62,9 +62,26 @@ case "${ACTION}" in
                 ;;
         esac
 
-        # Prueba de sintaxis con nginx
-        nginx -t -c "${REAL_PATH}" 2>&1 || nginx -t 2>&1
-        exit $?
+        # Para validar un archivo vhost (que contiene bloques server {}),
+        # lo envolvemos temporalmente en un bloque http {} completo.
+        TEST_WRAPPER=$(mktemp /tmp/nginx_val_XXXXXX.conf)
+        MIME_LINE=""
+        if [ -f /etc/nginx/mime.types ]; then
+            MIME_LINE="include /etc/nginx/mime.types;"
+        fi
+        cat <<EOF > "${TEST_WRAPPER}"
+events { worker_connections 1024; }
+http {
+    ${MIME_LINE}
+    include "${REAL_PATH}";
+}
+EOF
+        VALIDATION_OUTPUT=$(nginx -t -c "${TEST_WRAPPER}" 2>&1)
+        EXIT_CODE=$?
+        rm -f "${TEST_WRAPPER}"
+
+        echo "${VALIDATION_OUTPUT}"
+        exit ${EXIT_CODE}
         ;;
 
     apply-host)

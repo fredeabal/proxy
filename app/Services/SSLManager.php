@@ -76,7 +76,7 @@ class SSLManager
         $issuedSuccessfully = false;
         $errorOutput = null;
 
-        if (is_file($executor) && is_executable($executor)) {
+        if (is_file($executor)) {
             $cmd = ['sudo', $executor, 'issue-cert', $domain];
             if ($aliasesArg !== '') {
                 $cmd[] = $aliasesArg;
@@ -201,7 +201,7 @@ class SSLManager
         $renewed = false;
         $errorOutput = null;
 
-        if (is_file($executor) && is_executable($executor)) {
+        if (is_file($executor)) {
             $cmd = ['sudo', $executor, 'issue-cert', $domain];
             $descriptors = [
                 0 => ['pipe', 'r'],

@@ -159,7 +159,7 @@ mkdir -p /etc/nginx/sites-enabled
 # Instalar proxy-executor
 cp "${INSTALL_DIR}/executor/proxy-executor.sh" /usr/local/bin/proxy-executor
 chown root:root /usr/local/bin/proxy-executor
-chmod 0750 /usr/local/bin/proxy-executor
+chmod 0755 /usr/local/bin/proxy-executor
 
 # Regla de sudoers para que www-data ejecute el script sin contraseña
 cat << 'EOF' > /etc/sudoers.d/proxy-manager

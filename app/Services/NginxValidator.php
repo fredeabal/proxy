@@ -98,41 +98,9 @@ class NginxValidator
 
         $executor = $this->config->executorBinary;
 
-        // Si el ejecutor existe y es ejecutable en el sistema
-        if (is_file($executor) && is_executable($executor)) {
+        // Si el ejecutor existe en el sistema
+        if (is_file($executor)) {
             $cmd = ['sudo', $executor, 'validate-config', $filePath];
-            $descriptors = [
-                0 => ['pipe', 'r'],
-                1 => ['pipe', 'w'],
-                2 => ['pipe', 'w'],
-            ];
-
-            $process = proc_open($cmd, $descriptors, $pipes);
-            if (is_resource($process)) {
-                fclose($pipes[0]);
-                $stdout = stream_get_contents($pipes[1]);
-                $stderr = stream_get_contents($pipes[2]);
-                fclose($pipes[1]);
-                fclose($pipes[2]);
-                $exitCode = proc_close($process);
-
-                $output = trim($stdout . "\n" . $stderr);
-                if ($exitCode === 0) {
-                    return ['valid' => true, 'error' => null, 'output' => $output];
-                }
-
-                return [
-                    'valid'  => false,
-                    'error'  => 'Error de sintaxis Nginx detectado por el validador.',
-                    'output' => $output,
-                ];
-            }
-        }
-
-        // Si tenemos binario directo de nginx disponible en local
-        $nginxBin = $this->findNginxBinary();
-        if ($nginxBin !== null) {
-            $cmd = [$nginxBin, '-t', '-c', $filePath];
             $descriptors = [
                 0 => ['pipe', 'r'],
                 1 => ['pipe', 'w'],
@@ -155,10 +123,51 @@ class NginxValidator
 
                 return [
                     'valid'  => false,
-                    'error'  => 'Error de sintaxis reportado por Nginx.',
+                    'error'  => 'Error de sintaxis Nginx detectado: ' . $output,
                     'output' => $output,
                 ];
             }
+        }
+
+        // Si tenemos binario directo de nginx disponible en local
+        $nginxBin = $this->findNginxBinary();
+        if ($nginxBin !== null) {
+            // Un archivo vhost (server {}) debe envolverse en un bloque http {} para que nginx -t -c pueda validarlo
+            $testWrapper = tempnam(sys_get_temp_dir(), 'nginx_val_');
+            $mimeInclude = file_exists('/etc/nginx/mime.types') ? 'include /etc/nginx/mime.types;' : '';
+            $wrapperContent = "events { worker_connections 1024; }\nhttp {\n    {$mimeInclude}\n    include \"{$filePath}\";\n}\n";
+            file_put_contents($testWrapper, $wrapperContent);
+
+            $cmd = [$nginxBin, '-t', '-c', $testWrapper];
+            $descriptors = [
+                0 => ['pipe', 'r'],
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ];
+
+            $process = @proc_open($cmd, $descriptors, $pipes);
+            if (is_resource($process)) {
+                fclose($pipes[0]);
+                $stdout = stream_get_contents($pipes[1]);
+                $stderr = stream_get_contents($pipes[2]);
+                fclose($pipes[1]);
+                fclose($pipes[2]);
+                $exitCode = proc_close($process);
+                @unlink($testWrapper);
+
+                $output = trim($stdout . "\n" . $stderr);
+                if ($exitCode === 0) {
+                    return ['valid' => true, 'error' => null, 'output' => $output];
+                }
+
+                $cleanOutput = str_replace($testWrapper, basename($filePath), $output);
+                return [
+                    'valid'  => false,
+                    'error'  => 'Error de sintaxis reportado por Nginx: ' . $cleanOutput,
+                    'output' => $cleanOutput,
+                ];
+            }
+            @unlink($testWrapper);
         }
 
         // En desarrollo local o entorno sin Nginx instalado

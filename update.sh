@@ -103,7 +103,7 @@ echo -e "${YELLOW}⏳ [4/6] Actualizando Ejecutor Privilegiado (/usr/local/bin/p
 if [ -f "${INSTALL_DIR}/executor/proxy-executor.sh" ]; then
     cp "${INSTALL_DIR}/executor/proxy-executor.sh" /usr/local/bin/proxy-executor
     chown root:root /usr/local/bin/proxy-executor
-    chmod 0750 /usr/local/bin/proxy-executor
+    chmod 0755 /usr/local/bin/proxy-executor
 fi
 
 # 7. Restaurar permisos y limpiar caché

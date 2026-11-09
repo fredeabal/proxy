@@ -293,7 +293,7 @@ class NginxManager
         $executor = $this->config->executorBinary;
 
         // Si el ejecutor privilegiado está presente en Linux
-        if (is_file($executor) && is_executable($executor)) {
+        if (is_file($executor)) {
             $cmd = array_merge(['sudo', $executor, $action], $args);
 
             $descriptors = [
