@@ -83,6 +83,7 @@ final class AdvancedConfigTest extends CIUnitTestCase
         $this->assertStringContainsString('proxy_read_timeout 300s;', $config);
         $this->assertStringContainsString('proxy_send_timeout 180s;', $config);
         $this->assertStringContainsString('proxy_ssl_server_name on;', $config);
+        $this->assertStringContainsString('proxy_ssl_name $host;', $config);
         $this->assertStringContainsString('proxy_ssl_verify on;', $config);
         $this->assertStringContainsString('proxy_set_header Upgrade $http_upgrade;', $config);
         $this->assertStringContainsString('proxy_set_header Connection "upgrade";', $config);

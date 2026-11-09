@@ -64,7 +64,9 @@ final class NginxIntegrationTest extends CIUnitTestCase
         $this->assertStringContainsString('server_name app.test.com www.app.test.com;', $config);
         $this->assertStringContainsString('proxy_pass http://127.0.0.1:3000;', $config);
         $this->assertStringContainsString('location ^~ /.well-known/acme-challenge/', $config);
-        $this->assertStringContainsString('error_page 502 503 504', $config);
+        $this->assertStringContainsString('error_page 502 /proxy_error_502.html;', $config);
+        $this->assertStringContainsString('error_page 503 /proxy_error_503.html;', $config);
+        $this->assertStringContainsString('error_page 504 /proxy_error_504.html;', $config);
         $this->assertStringNotContainsString('listen 443', $config);
     }
 

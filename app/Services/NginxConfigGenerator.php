@@ -219,13 +219,16 @@ class NginxConfigGenerator
         $lines[] = "{$padInner}proxy_read_timeout {$readTimeout}s;";
         $lines[] = "{$padInner}proxy_buffering on;";
 
-        // Verificación SSL hacia el backend (cuando el esquema es https o se configura explícitamente)
+        // Verificación SSL y SNI hacia el backend (cuando el esquema es https o se configura explícitamente)
         $sslVerify = !empty($proxy['proxy_ssl_verify']);
         if ($scheme === 'https' || array_key_exists('proxy_ssl_verify', $proxy)) {
             $verifyState = $sslVerify ? 'on' : 'off';
+            // Si el destino es una IP, enviamos $host como SNI; si es un dominio interno, enviamos ese dominio
+            $sniName = filter_var($host, FILTER_VALIDATE_IP) !== false ? '$host' : $host;
             $lines[] = '';
-            $lines[] = "{$padInner}# Verificación SSL hacia el backend";
+            $lines[] = "{$padInner}# Verificación SSL y SNI hacia el backend";
             $lines[] = "{$padInner}proxy_ssl_server_name on;";
+            $lines[] = "{$padInner}proxy_ssl_name {$sniName};";
             $lines[] = "{$padInner}proxy_ssl_verify {$verifyState};";
         }
 
@@ -296,28 +299,49 @@ class NginxConfigGenerator
     }
 
     /**
-     * Renderiza páginas de error amigables para 502/503/504 Bad Gateway.
+     * Renderiza páginas de error amigables para 502, 503 y 504 conservando el código HTTP original.
      */
     protected function renderErrorPages(int $indent = 4): string
     {
         $pad = str_repeat(' ', $indent);
         $padInner = str_repeat(' ', $indent + 4);
 
-        $html = '<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>502 Bad Gateway</title>'
-              . '<style>body{font-family:system-ui,-apple-system,sans-serif;background:#0b1114;color:#e1e7ec;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}'
-              . 'div{text-align:center;padding:2.5rem;border:1px solid #374853;border-radius:12px;background:#151c24;max-width:480px;box-shadow:0 10px 25px rgba(0,0,0,0.5)}'
-              . 'h1{color:#ef4444;font-size:2.2rem;margin-bottom:0.5rem;font-weight:700}'
-              . 'p{color:#94a3b8;font-size:0.95rem;line-height:1.5}'
-              . '</style></head><body><div><h1>502 Bad Gateway</h1><p>El servidor proxy inverso no pudo conectar con el backend de destino.</p></div></body></html>';
+        $errors = [
+            502 => [
+                'title' => '502 Bad Gateway',
+                'desc'  => 'El servidor proxy inverso no pudo conectar con el backend de destino.',
+            ],
+            503 => [
+                'title' => '503 Service Unavailable',
+                'desc'  => 'El servicio de destino no está disponible temporalmente o está en mantenimiento.',
+            ],
+            504 => [
+                'title' => '504 Gateway Timeout',
+                'desc'  => 'El servidor de destino tardó demasiado tiempo en responder a la solicitud.',
+            ],
+        ];
+
+        $style = 'body{font-family:system-ui,-apple-system,sans-serif;background:#0b1114;color:#e1e7ec;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}'
+               . 'div{text-align:center;padding:2.5rem;border:1px solid #374853;border-radius:12px;background:#151c24;max-width:480px;box-shadow:0 10px 25px rgba(0,0,0,0.5)}'
+               . 'h1{color:#ef4444;font-size:2.2rem;margin-bottom:0.5rem;font-weight:700}'
+               . 'p{color:#94a3b8;font-size:0.95rem;line-height:1.5}';
 
         $lines = [];
-        $lines[] = "{$pad}# Páginas de error amigables";
-        $lines[] = "{$pad}error_page 502 503 504 /proxy_error_50x.html;";
-        $lines[] = "{$pad}location = /proxy_error_50x.html {";
-        $lines[] = "{$padInner}internal;";
-        $lines[] = "{$padInner}default_type text/html;";
-        $lines[] = "{$padInner}return 502 '{$html}';";
-        $lines[] = "{$pad}}";
+        $lines[] = "{$pad}# Páginas de error amigables (conservando código HTTP original)";
+        foreach ($errors as $code => $info) {
+            $lines[] = "{$pad}error_page {$code} /proxy_error_{$code}.html;";
+        }
+
+        foreach ($errors as $code => $info) {
+            $html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>{$info['title']}</title>"
+                  . "<style>{$style}</style></head><body><div><h1>{$info['title']}</h1><p>{$info['desc']}</p></div></body></html>";
+
+            $lines[] = "{$pad}location = /proxy_error_{$code}.html {";
+            $lines[] = "{$padInner}internal;";
+            $lines[] = "{$padInner}default_type text/html;";
+            $lines[] = "{$padInner}return {$code} '{$html}';";
+            $lines[] = "{$pad}}";
+        }
 
         return implode("\n", $lines);
     }
