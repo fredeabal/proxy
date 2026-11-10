@@ -299,7 +299,7 @@ $isEnabled = (bool) old('enabled', $proxy['enabled'] ?? 1);
 
           <!-- Editor de Vhost Nginx -->
           <textarea id="vhostEditor" 
-                    class="form-control nginx-vhost-editor p-3 font-monospace" 
+                    class="form-control nginx-terminal nginx-vhost-editor p-3 font-monospace" 
                     rows="20" 
                     spellcheck="false"><?= esc($vhostConfig ?? '') ?></textarea>
 

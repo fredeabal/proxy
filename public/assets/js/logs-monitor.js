@@ -43,6 +43,7 @@
       }
       if (/\[(emerg|alert|crit|error)\]/i.test(line)) return 'log-line-error';
       if (/\[warn\]/i.test(line)) return 'log-line-warn';
+      if (/\[(info|notice)\]/i.test(line)) return 'log-line-info';
       return '';
     }
 

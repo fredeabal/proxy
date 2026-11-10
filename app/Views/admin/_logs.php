@@ -45,7 +45,7 @@
       <span class="small text-muted text-nowrap" id="nginxLogLineCount"><?= count($nginxLog['lines'] ?? []) ?> líneas</span>
     </div>
 
-    <pre id="nginxLogViewer" class="nginx-log-console font-monospace mb-0"><?php
+    <pre id="nginxLogViewer" class="nginx-terminal nginx-log-console font-monospace mb-0"><?php
       if (!empty($nginxLog['lines'])) {
           echo esc(implode("\n", $nginxLog['lines']));
       } else {

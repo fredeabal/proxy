@@ -73,10 +73,10 @@ Guía y estándares de diseño y desarrollo mobile-first optimizados para **NetC
 * Utilizar unidades relativas (`rem`, `em`) para respetar el tamaño de fuente configurado por el usuario en los ajustes de accesibilidad de su sistema operativo.
 * Evitar fuentes ultraligeras (`font-weight: 300`) o colores de texto con bajo contraste (`opacity < 0.5`) que impidan la lectura en smartphones bajo luz solar directa.
 
-### 8. Aprovechamiento Total de Pantalla al Borde (Zero / Minimal Gutter al Borde)
-* **Optimización extrema del ancho lateral:** En smartphones (`< 768px`), las tarjetas (`.card`, `.mobile-card-item`, tarjetas de métricas) no deben tener márgenes muertos excesivos contra el borde físico del viewport.
-* **Padding lateral de contenedor reducido:** El contenedor principal (`.body-wrapper > .container-fluid`) debe reducir su padding horizontal a un mínimo estricto de **4px** (`padding-left: max(4px, env(safe-area-inset-left)) !important; padding-right: max(4px, env(safe-area-inset-right)) !important;`). Queda prohibido dejar 8px, 12px, 16px o 24px de margen en móvil.
-* **Filas y Columnas Compactas:** Las filas (`.row`) y columnas (`.col-*`) ajustan sus gutters horizontales a `margin-left: -2px !important; margin-right: -2px !important;` y `padding-left: 2px !important; padding-right: 2px !important;` para que las tarjetas aprovechen casi el 100% del ancho visible sin desbordar el viewport ni causar scroll horizontal.
+### 8. Aprovechamiento Total de Pantalla al Borde (Minimal Gutter al Borde)
+* **Optimización del ancho lateral:** En smartphones (`< 768px`), las tarjetas (`.card`, `.mobile-card-item`, tarjetas de métricas) mantienen una separación pequeña y limpia contra el borde físico del viewport (**8px**).
+* **Padding lateral de contenedor reducido:** El contenedor principal (`.body-wrapper > .container-fluid`) ajusta su padding horizontal a un mínimo de **8px** (`padding-left: max(8px, env(safe-area-inset-left)) !important; padding-right: max(8px, env(safe-area-inset-right)) !important;`).
+* **Filas y Columnas Compactas:** Las filas (`.row`) y columnas (`.col-*`) ajustan sus gutters horizontales a `margin-left: -4px !important; margin-right: -4px !important;` y `padding-left: 4px !important; padding-right: 4px !important;` para que las tarjetas alineen a 8px sin desbordar el viewport ni causar scroll horizontal.
 * **Cero Doble Tarjeta:** Las listas y colecciones de elementos en móvil se presentan como tarjetas planas directas sin tarjeta contenedora envolvente adicional.
 * **Cero bordes primary en hover/active:** Las tarjetas móviles mantienen sus bordes en tonos neutros sin encenderse en naranja/primary; la interacción táctil o hover se señaliza sutilmente mediante variación ligera del fondo (`background-color`).
 

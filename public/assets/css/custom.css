@@ -1656,8 +1656,8 @@ html[data-boxed-layout=boxed] .container-xxl {
 }
 @media (max-width: 767.98px) {
     .body-wrapper > .container-fluid {
-        padding-left: max(4px, env(safe-area-inset-left)) !important;
-        padding-right: max(4px, env(safe-area-inset-right)) !important;
+        padding-left: max(8px, env(safe-area-inset-left)) !important;
+        padding-right: max(8px, env(safe-area-inset-right)) !important;
     }
 }
 
@@ -1717,8 +1717,8 @@ html[data-boxed-layout=boxed] .container-xxl {
     }
 
     .body-wrapper > .container-fluid {
-        padding-left: max(4px, env(safe-area-inset-left)) !important;
-        padding-right: max(4px, env(safe-area-inset-right)) !important;
+        padding-left: max(8px, env(safe-area-inset-left)) !important;
+        padding-right: max(8px, env(safe-area-inset-right)) !important;
         padding-top: 8px !important;
         max-width: 100% !important;
         width: 100% !important;
@@ -1742,14 +1742,14 @@ html[data-boxed-layout=boxed] .container-xxl {
 
     .body-wrapper > .container-fluid > .row,
     .metrics-summary-row {
-        margin-left: -2px !important;
-        margin-right: -2px !important;
+        margin-left: -4px !important;
+        margin-right: -4px !important;
     }
 
     .body-wrapper > .container-fluid > .row > [class*="col-"],
     .metrics-summary-row > [class*="col-"] {
-        padding-left: 2px !important;
-        padding-right: 2px !important;
+        padding-left: 4px !important;
+        padding-right: 4px !important;
     }
 
     /* Tarjetas con acabado técnico refinado */
@@ -2596,20 +2596,52 @@ span.badge,
     order: -1 !important;
 }
 
-/* Consola de visualización de logs de Nginx (Fase 7) */
-.nginx-log-console {
-    background-color: #0b1114;
-    color: #cbd5e1;
-    border: 1px solid #374853;
-    border-radius: 8px;
-    padding: 1rem;
-    max-height: 420px;
-    overflow-y: auto;
-    overflow-x: auto;
-    font-size: 0.8125rem;
-    line-height: 1.55;
+/* =========================================================================
+   Terminal / Consola Base Unificada Nginx (Logs y Editor Vhost)
+   ========================================================================= */
+.nginx-terminal,
+.nginx-log-console,
+.nginx-vhost-editor {
+    background-color: #f8fafc !important;
+    color: #334155 !important;
+    border: 1px solid #dfe5ef !important;
+    border-radius: 8px !important;
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+    font-size: 0.8125rem !important;
+    line-height: 1.6 !important;
     white-space: pre-wrap;
     word-break: break-all;
+    tab-size: 4;
+}
+
+[data-bs-theme="dark"] .nginx-terminal,
+[data-bs-theme="dark"] .nginx-log-console,
+[data-bs-theme="dark"] .nginx-vhost-editor {
+    background-color: #0b1114 !important;
+    color: #cbd5e1 !important;
+    border-color: #374853 !important;
+}
+
+/* Específico: Visor de logs preformateado */
+.nginx-log-console {
+    display: block;
+    padding: 0.875rem 1rem;
+    max-height: 440px;
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+/* Específico: Editor interactivo de Vhost */
+.nginx-vhost-editor {
+    min-height: 480px !important;
+    resize: vertical !important;
+    outline: none !important;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+.nginx-vhost-editor:focus,
+[data-bs-theme="dark"] .nginx-vhost-editor:focus {
+    border-color: var(--bs-primary, #F38020) !important;
+    box-shadow: 0 0 0 0.2rem rgba(243, 128, 32, 0.2) !important;
 }
 
 
@@ -2656,18 +2688,67 @@ span.badge,
 .log-bar-95 { width: 95%; }
 .log-bar-100 { width: 100%; }
 
-.nginx-log-console { display: block; }
 .nginx-log-console .log-line {
     display: block;
-    padding: 1px 0.5rem;
-    border-left: 2px solid transparent;
+    padding: 2px 0.5rem;
+    border-left: 3px solid transparent;
+    border-radius: 2px;
+    color: #334155;
     white-space: pre-wrap;
     word-break: break-all;
+    transition: background-color 0.15s ease;
 }
-.nginx-log-console .log-line:hover { background-color: rgba(255, 255, 255, 0.04); }
-.nginx-log-console .log-line-error { color: #ef4444; border-left-color: #ef4444; background-color: rgba(220, 38, 38, 0.08); }
-.nginx-log-console .log-line-warn  { color: #F38020; border-left-color: #F38020; }
-.nginx-log-console .log-line-info  { color: #7c8fac; }
+.nginx-log-console .log-line:hover { background-color: rgba(0, 0, 0, 0.04); }
+
+/* Líneas de log en Modo Claro (colores del sistema / Bootstrap contrastados) */
+.nginx-log-console .log-line-warn {
+    color: #b45309;
+    border-left-color: #FAAD14;
+    background-color: rgba(250, 173, 20, 0.08);
+}
+.nginx-log-console .log-line-error {
+    color: #b91c1c;
+    border-left-color: #ef4444;
+    background-color: rgba(239, 68, 68, 0.08);
+}
+.nginx-log-console .log-line-info {
+    color: #1d4ed8;
+    border-left-color: #539bff;
+    background-color: rgba(83, 155, 255, 0.08);
+}
+.nginx-log-console .log-line-success {
+    color: #15803d;
+    border-left-color: #34c759;
+    background-color: rgba(52, 199, 89, 0.08);
+}
+
+/* Líneas de log en Modo Oscuro (Dark Theme) */
+[data-bs-theme="dark"] .nginx-log-console .log-line {
+    color: #cbd5e1;
+}
+[data-bs-theme="dark"] .nginx-log-console .log-line:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+[data-bs-theme="dark"] .nginx-log-console .log-line-warn {
+    color: #fbbf24;
+    border-left-color: #FAAD14;
+    background-color: rgba(250, 173, 20, 0.12);
+}
+[data-bs-theme="dark"] .nginx-log-console .log-line-error {
+    color: #f87171;
+    border-left-color: #ef4444;
+    background-color: rgba(239, 68, 68, 0.14);
+}
+[data-bs-theme="dark"] .nginx-log-console .log-line-info {
+    color: #93c5fd;
+    border-left-color: #539bff;
+    background-color: rgba(83, 155, 255, 0.12);
+}
+[data-bs-theme="dark"] .nginx-log-console .log-line-success {
+    color: #86efac;
+    border-left-color: #34c759;
+    background-color: rgba(52, 199, 89, 0.12);
+}
 
 /* Administración: espacio inferior para que los menús de acciones no queden cortados al final de la página */
 #adminTabsContent {
@@ -2731,25 +2812,7 @@ span.badge,
     gap: 0.5rem;
 }
 
-/* Editor de Vhost Nginx estilo CloudPanel */
-.nginx-vhost-editor {
-    background-color: #0b1114 !important;
-    color: #38bdf8 !important;
-    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
-    font-size: 0.84375rem !important;
-    line-height: 1.6 !important;
-    tab-size: 4 !important;
-    border: 1px solid #374853 !important;
-    border-radius: 8px !important;
-    min-height: 480px !important;
-    resize: vertical !important;
-    outline: none !important;
-}
 
-.nginx-vhost-editor:focus {
-    border-color: #0284c7 !important;
-    box-shadow: 0 0 0 0.2rem rgba(2, 132, 199, 0.25) !important;
-}
 
 
 
