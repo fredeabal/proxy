@@ -229,6 +229,9 @@ server {
         try_files \$uri \$uri/ /index.php\$is_args\$args;
     }
 
+    # Modo Stealth: mapear 403 a 404
+    error_page 403 =404 /index.php;
+
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:${PHP_SOCK};

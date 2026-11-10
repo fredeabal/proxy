@@ -307,6 +307,10 @@ class NginxConfigGenerator
         $padInner = str_repeat(' ', $indent + 4);
 
         $errors = [
+            404 => [
+                'title' => '404 Not Found',
+                'desc'  => 'El recurso o dominio solicitado no fue encontrado en este servidor.',
+            ],
             502 => [
                 'title' => '502 Bad Gateway',
                 'desc'  => 'El servidor proxy inverso no pudo conectar con el backend de destino.',
@@ -328,6 +332,8 @@ class NginxConfigGenerator
 
         $lines = [];
         $lines[] = "{$pad}# Páginas de error amigables (conservando código HTTP original)";
+        $lines[] = "{$pad}# Modo Stealth: mapear 403 (ej. directivas deny de IPs) a 404 Not Found";
+        $lines[] = "{$pad}error_page 403 =404 /proxy_error_404.html;";
         foreach ($errors as $code => $info) {
             $lines[] = "{$pad}error_page {$code} /proxy_error_{$code}.html;";
         }

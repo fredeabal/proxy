@@ -139,6 +139,11 @@ EOF
 touch /etc/nginx/conf.d/proxy_manager_banned_ips.conf
 chmod 0644 /etc/nginx/conf.d/proxy_manager_cloudflare_realip.conf /etc/nginx/conf.d/proxy_manager_banned_ips.conf 2>/dev/null || true
 
+# Asegurar que el vhost del panel mapee 403 a 404 en Nginx si no está configurado
+if [ -f /etc/nginx/sites-available/proxy-manager ] && ! grep -q "error_page 403 =404" /etc/nginx/sites-available/proxy-manager; then
+    sed -i '/location \/ {/i \    error_page 403 =404 /index.php;' /etc/nginx/sites-available/proxy-manager 2>/dev/null || true
+fi
+
 # 7. Restaurar permisos y limpiar caché
 echo -e "${YELLOW}⏳ [5/6] Restaurando permisos y limpiando caché de la aplicación...${NC}"
 php spark cache:clear 2>/dev/null || true
