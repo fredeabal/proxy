@@ -49,7 +49,8 @@ final class SSLIntegrationTest extends CIUnitTestCase
     public function testAuthenticatedUserCanViewCertificatesList(): void
     {
         $result = $this->withSession($this->adminSession)->get('certificates');
-        $result->assertRedirectTo(base_url('proxy-hosts'));
+        $result->assertOK();
+        $result->assertSee('Certificados SSL');
     }
 
     public function testRenewSslDirectlyFromProxyHost(): void

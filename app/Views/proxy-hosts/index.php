@@ -204,12 +204,13 @@
                   <?php endif; ?>
                 </td>
 
-                <!-- Acciones (Menú de 3 puntos estilo NetCrew) -->
-                <td class="text-end pe-4">
-                  <div class="dropdown" onclick="event.stopPropagation();">
+                <!-- Acciones (Menú de 3 puntos estilo DeCA) -->
+                <td class="text-end pe-3" onclick="event.stopPropagation();">
+                  <div class="dropdown dropstart d-inline-block">
                     <a href="javascript:void(0)" 
-                       class="text-muted p-2 d-inline-flex align-items-center justify-content-center text-decoration-none" 
+                       class="text-muted p-1 d-inline-block" 
                        data-bs-toggle="dropdown" 
+                       data-bs-popper-config='{"strategy":"fixed"}'
                        aria-expanded="false" 
                        title="Acciones">
                       <i class="ti ti-dots-vertical fs-5"></i>
@@ -336,10 +337,11 @@
                 <?php endif; ?>
               </div>
             </div>
-            <div class="dropdown flex-shrink-0 ms-2" onclick="event.stopPropagation();">
+            <div class="dropdown dropstart flex-shrink-0 ms-2" onclick="event.stopPropagation();">
               <a href="javascript:void(0)" 
                  class="text-muted d-inline-flex align-items-center justify-content-center text-decoration-none" 
                  data-bs-toggle="dropdown" 
+                 data-bs-popper-config='{"strategy":"fixed"}'
                  aria-expanded="false"
                  style="min-width: 44px; min-height: 44px; margin: -10px -8px -10px 0;"
                  title="Acciones">
@@ -444,6 +446,13 @@ function confirmDelete(id, domain) {
 
 // Búsqueda y filtrado en tiempo real sin botón
 document.addEventListener("DOMContentLoaded", function() {
+  // Soporte universal para dropdowns con estrategia fixed (evita cortes de bordes en tablas y cards)
+  if (window.bootstrap && window.bootstrap.Dropdown) {
+    document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(el => {
+      new window.bootstrap.Dropdown(el, { popperConfig: (cfg) => Object.assign({}, cfg, { strategy: 'fixed' }) });
+    });
+  }
+
   const searchInput = document.getElementById('tableSearchInput');
   const statusSelect = document.getElementById('statusFilterSelect');
   const mobileSearch = document.getElementById('mobileSearchInput');

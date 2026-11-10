@@ -46,6 +46,15 @@
               </a>
             </li>
 
+            <li class="sidebar-item">
+              <a class="sidebar-link <?= $currentSection === 'certificates' ? 'active' : '' ?>" href="<?= base_url('certificates') ?>" aria-expanded="false">
+                <span>
+                  <i class="ti ti-certificate"></i>
+                </span>
+                <span class="hide-menu">Certificados SSL</span>
+              </a>
+            </li>
+
             <li class="nav-small-cap mt-4">
               <i class="ti ti-dots nav-small-cap-icon fs-4"></i>
               <span class="hide-menu">Sistema</span>

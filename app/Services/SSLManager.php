@@ -295,15 +295,37 @@ class SSLManager
 
         $domain = $cert['domain'];
 
-        // Desactivar SSL en el proxy si corresponde
-        $proxy = $this->proxyModel->where('domain', $domain)->first();
-        if ($proxy) {
+        // Desactivar SSL en todos los proxies vinculados por ID o por dominio
+        $proxies = $this->proxyModel->groupStart()
+            ->where('certificate_id', $certId)
+            ->orWhere('domain', $domain)
+            ->groupEnd()
+            ->findAll();
+
+        foreach ($proxies as $proxy) {
             $this->proxyModel->update($proxy['id'], [
-                'ssl_enabled' => 0,
-                'force_https' => 0,
+                'ssl_enabled'    => 0,
+                'force_https'    => 0,
+                'certificate_id' => null,
             ]);
             $updatedProxy = $this->proxyModel->find($proxy['id']);
-            $this->nginxManager->applyHost($updatedProxy);
+            if ($updatedProxy) {
+                $this->nginxManager->applyHost($updatedProxy);
+            }
+        }
+
+        // Eliminar archivos físicos en certbot si el ejecutor está presente
+        $executor = $this->config->executorBinary;
+        if (is_file($executor)) {
+            $cmd = ['sudo', $executor, 'delete-cert', $domain];
+            $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+            $proc = @proc_open($cmd, $descriptors, $pipes);
+            if (is_resource($proc)) {
+                fclose($pipes[0]);
+                fclose($pipes[1]);
+                fclose($pipes[2]);
+                proc_close($proc);
+            }
         }
 
         $this->certModel->delete($certId);

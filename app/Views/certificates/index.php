@@ -225,18 +225,33 @@
                   <?php endif; ?>
                 </td>
 
-                <!-- Acciones (Universal btn-sm, 8px gap) -->
-                <td class="text-end pe-4">
-                  <div class="d-inline-flex align-items-center gap-2">
-                    <form method="post" action="<?= base_url('certificates/renew/' . $cert['id']) ?>" class="d-inline">
-                      <?= csrf_field() ?>
-                      <button type="submit" class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1" title="Renovar certificado ahora">
-                        <i class="ti ti-refresh"></i> Renovar
-                      </button>
-                    </form>
-                    <button type="button" class="btn btn-danger btn-sm d-inline-flex align-items-center gap-1" onclick="confirmDeleteCert(<?= $cert['id'] ?>, '<?= esc($cert['domain'], 'js') ?>')">
-                      <i class="ti ti-trash"></i> Eliminar
-                    </button>
+                <!-- Acciones (Menú de 3 puntos estilo DeCA con dropstart y fixed strategy) -->
+                <td class="text-end pe-3" onclick="event.stopPropagation();">
+                  <div class="dropdown dropstart d-inline-block">
+                    <a href="javascript:void(0)" 
+                       class="text-muted p-1 d-inline-block" 
+                       data-bs-toggle="dropdown" 
+                       data-bs-popper-config='{"strategy":"fixed"}'
+                       aria-expanded="false" 
+                       title="Acciones">
+                      <i class="ti ti-dots-vertical fs-5"></i>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm border">
+                      <li>
+                        <form method="post" action="<?= base_url('certificates/renew/' . $cert['id']) ?>" class="m-0">
+                          <?= csrf_field() ?>
+                          <button type="submit" class="dropdown-item d-flex align-items-center gap-2">
+                            <i class="ti ti-refresh fs-4"></i> Renovar
+                          </button>
+                        </form>
+                      </li>
+                      <li><hr class="dropdown-divider my-1"></li>
+                      <li>
+                        <button type="button" class="dropdown-item text-danger d-flex align-items-center gap-2" onclick="confirmDeleteCert(<?= $cert['id'] ?>, '<?= esc($cert['domain'], 'js') ?>')">
+                          <i class="ti ti-trash fs-4"></i> Eliminar
+                        </button>
+                      </li>
+                    </ul>
                   </div>
                 </td>
               </tr>
@@ -327,7 +342,7 @@
                 </div>
               </div>
             </div>
-            <div class="flex-shrink-0 ms-2">
+            <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-2">
               <?php if ($statusKey === 'valid'): ?>
                 <span class="badge bg-success-subtle text-success border border-success fs-1">Válido</span>
               <?php elseif ($statusKey === 'expiring_soon'): ?>
@@ -335,6 +350,33 @@
               <?php else: ?>
                 <span class="badge bg-danger-subtle text-danger border border-danger fs-1">Caducado</span>
               <?php endif; ?>
+
+              <div class="dropdown dropstart d-inline-block" onclick="event.stopPropagation();">
+                <a href="javascript:void(0)" 
+                   class="text-muted p-1 d-inline-block" 
+                   data-bs-toggle="dropdown" 
+                   data-bs-popper-config='{"strategy":"fixed"}'
+                   aria-expanded="false"
+                   title="Acciones">
+                  <i class="ti ti-dots-vertical fs-5"></i>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm border">
+                  <li>
+                    <form method="post" action="<?= base_url('certificates/renew/' . $cert['id']) ?>" class="m-0">
+                      <?= csrf_field() ?>
+                      <button type="submit" class="dropdown-item d-flex align-items-center gap-2">
+                        <i class="ti ti-refresh fs-4"></i> Renovar
+                      </button>
+                    </form>
+                  </li>
+                  <li><hr class="dropdown-divider my-1"></li>
+                  <li>
+                    <button type="button" class="dropdown-item text-danger d-flex align-items-center gap-2" onclick="confirmDeleteCert(<?= $cert['id'] ?>, '<?= esc($cert['domain'], 'js') ?>')">
+                      <i class="ti ti-trash fs-4"></i> Eliminar
+                    </button>
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
 
@@ -355,19 +397,6 @@
               <strong>Renovación auto:</strong> 
               <span class="<?= $cert['auto_renew'] ? 'text-body' : 'text-muted' ?>"><?= $cert['auto_renew'] ? 'Sí' : 'No' ?></span>
             </div>
-          </div>
-
-          <!-- Acciones Móvil (Universal btn-sm, 8px gap) -->
-          <div class="d-flex justify-content-end align-items-center gap-2 mt-3 pt-2 border-top">
-            <form method="post" action="<?= base_url('certificates/renew/' . $cert['id']) ?>" class="d-inline">
-              <?= csrf_field() ?>
-              <button type="submit" class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1">
-                <i class="ti ti-refresh"></i> Renovar
-              </button>
-            </form>
-            <button type="button" class="btn btn-danger btn-sm d-inline-flex align-items-center gap-1" onclick="confirmDeleteCert(<?= $cert['id'] ?>, '<?= esc($cert['domain'], 'js') ?>')">
-              <i class="ti ti-trash"></i> Eliminar
-            </button>
           </div>
         </div>
       </div>
@@ -413,6 +442,13 @@ function confirmDeleteCert(id, domain) {
 
 // Búsqueda y filtrado en tiempo real sin botón
 document.addEventListener("DOMContentLoaded", function() {
+  // Dropdowns con posicionamiento fijo para no desbordar ni cortarse con bordes de tarjetas o tablas
+  if (window.bootstrap && window.bootstrap.Dropdown) {
+    document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(el => {
+      new window.bootstrap.Dropdown(el, { popperConfig: (cfg) => Object.assign({}, cfg, { strategy: 'fixed' }) });
+    });
+  }
+
   const searchInput = document.getElementById('tableSearchInput');
   const statusSelect = document.getElementById('statusFilterSelect');
   const mobileSearch = document.getElementById('mobileSearchInput');

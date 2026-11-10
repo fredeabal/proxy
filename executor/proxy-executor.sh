@@ -280,6 +280,20 @@ EOF
         exit 0
         ;;
 
+    delete-cert)
+        if [ $# -ne 1 ]; then
+            error_exit "Uso: $0 delete-cert <domain>" 22
+        fi
+        DOMAIN="$1"
+        DOMAIN_REGEX="^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)+$"
+        if [[ "${DOMAIN}" =~ ^- ]] || [[ "${DOMAIN}" == *".."* ]] || ! [[ "${DOMAIN}" =~ ${DOMAIN_REGEX} ]]; then
+            error_exit "Dominio inválido o intento de Path Traversal bloqueado: ${DOMAIN}" 24
+        fi
+        certbot delete --cert-name "${DOMAIN}" --non-interactive 2>&1 || true
+        echo "OK: Certificado para ${DOMAIN} eliminado."
+        exit 0
+        ;;
+
     cert-info)
         if [ $# -ne 1 ]; then
             error_exit "Uso: $0 cert-info <domain>" 22
