@@ -98,13 +98,46 @@ composer install --no-dev --optimize-autoloader --no-interaction
 echo -e "${YELLOW}⏳ [3/6] Aplicando migraciones de base de datos...${NC}"
 php spark migrate --all
 
-# 6. Actualizar Ejecutor Privilegiado
+# 6. Actualizar Ejecutor Privilegiado y configuración Cloudflare Real-IP
 echo -e "${YELLOW}⏳ [4/6] Actualizando Ejecutor Privilegiado (/usr/local/bin/proxy-executor)...${NC}"
 if [ -f "${INSTALL_DIR}/executor/proxy-executor.sh" ]; then
     cp "${INSTALL_DIR}/executor/proxy-executor.sh" /usr/local/bin/proxy-executor
     chown root:root /usr/local/bin/proxy-executor
     chmod 0755 /usr/local/bin/proxy-executor
 fi
+
+mkdir -p /etc/nginx/conf.d
+cat << 'EOF' > /etc/nginx/conf.d/proxy_manager_cloudflare_realip.conf
+# ==============================================================================
+# Reverse Proxy Manager - Restauración de IP Real para Cloudflare (CF-Connecting-IP)
+# ==============================================================================
+set_real_ip_from 173.245.48.0/20;
+set_real_ip_from 103.21.244.0/22;
+set_real_ip_from 103.22.200.0/22;
+set_real_ip_from 103.31.4.0/22;
+set_real_ip_from 141.101.64.0/18;
+set_real_ip_from 108.162.192.0/18;
+set_real_ip_from 190.93.240.0/20;
+set_real_ip_from 188.114.96.0/20;
+set_real_ip_from 197.234.240.0/22;
+set_real_ip_from 198.41.128.0/17;
+set_real_ip_from 162.158.0.0/15;
+set_real_ip_from 104.16.0.0/13;
+set_real_ip_from 104.24.0.0/14;
+set_real_ip_from 172.64.0.0/13;
+set_real_ip_from 131.0.72.0/22;
+set_real_ip_from 2400:cb00::/32;
+set_real_ip_from 2606:4700::/32;
+set_real_ip_from 2803:f800::/32;
+set_real_ip_from 2405:b500::/32;
+set_real_ip_from 2405:8100::/32;
+set_real_ip_from 2a06:98c0::/29;
+set_real_ip_from 2c0f:f248::/32;
+real_ip_header CF-Connecting-IP;
+real_ip_recursive on;
+EOF
+touch /etc/nginx/conf.d/proxy_manager_banned_ips.conf
+chmod 0644 /etc/nginx/conf.d/proxy_manager_cloudflare_realip.conf /etc/nginx/conf.d/proxy_manager_banned_ips.conf 2>/dev/null || true
 
 # 7. Restaurar permisos y limpiar caché
 echo -e "${YELLOW}⏳ [5/6] Restaurando permisos y limpiando caché de la aplicación...${NC}"

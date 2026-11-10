@@ -3,7 +3,9 @@
 namespace App\Controllers;
 
 use App\Models\AuditLogModel;
+use App\Models\BannedIpModel;
 use App\Models\UserModel;
+use App\Services\NginxManager;
 use App\Services\TotpService;
 use CodeIgniter\HTTP\RedirectResponse;
 
@@ -22,7 +24,7 @@ class AuthController extends BaseController
     }
 
     /**
-     * Procesa la autenticación con protección contra fuerza bruta (Throttler).
+     * Procesa la autenticación con protección contra fuerza bruta (Throttler + Auto-Ban IP).
      */
     public function attemptLogin(): RedirectResponse
     {
@@ -30,10 +32,16 @@ class AuthController extends BaseController
         $throttler = service('throttler');
         $ip = $this->request->getIPAddress();
         $throttleKey = 'login_' . md5($ip);
+        $banModel = new BannedIpModel();
 
         // Límite: 5 intentos por minuto por dirección IP
         if ($throttler->check($throttleKey, 5, MINUTE) === false) {
-            AuditLogModel::log('login_blocked', "IP bloqueada por intentos excesivos ({$ip})", null, $ip);
+            if ($banModel->recordFailedAttempt($ip, 'Exceso de intentos de login (fuerza bruta)', 5, 30)) {
+                AuditLogModel::log('ip_auto_banned', "IP bloqueada automáticamente durante 30 min ({$ip})", null, $ip);
+                (new NginxManager())->syncBannedIps($banModel->getActiveBans());
+            } else {
+                AuditLogModel::log('login_blocked', "IP bloqueada por intentos excesivos ({$ip})", null, $ip);
+            }
 
             return redirect()->back()
                 ->withInput()
@@ -61,12 +69,18 @@ class AuthController extends BaseController
         if (! $user || ! password_verify($password, $user['password'])) {
             AuditLogModel::log('login_failed', "Intento fallido para el correo: {$email}", null, $ip);
 
+            if ($banModel->recordFailedAttempt($ip, "5 intentos fallidos de login ({$email})", 5, 30)) {
+                AuditLogModel::log('ip_auto_banned', "IP bloqueada automáticamente durante 30 min ({$ip})", null, $ip);
+                (new NginxManager())->syncBannedIps($banModel->getActiveBans());
+            }
+
             return redirect()->back()
                 ->withInput()
                 ->with('error', 'Las credenciales proporcionadas no son válidas.');
         }
 
-        // Autenticación exitosa: regenerar ID de sesión para prevenir Session Fixation
+        // Autenticación exitosa: limpiar contador de fallos y regenerar ID de sesión
+        $banModel->clearAttempts($ip);
         $session->regenerate(true);
 
         // Fase 9: Si el administrador tiene 2FA (TOTP) activo, solicitar código de segundo factor
@@ -129,9 +143,15 @@ class AuthController extends BaseController
         $throttler = service('throttler');
         $ip = $this->request->getIPAddress();
         $throttleKey = 'login_2fa_' . md5($ip);
+        $banModel = new BannedIpModel();
 
         if ($throttler->check($throttleKey, 5, MINUTE) === false) {
-            AuditLogModel::log('login_2fa_blocked', "IP bloqueada por intentos excesivos de 2FA ({$ip})", $pendingUserId, $ip);
+            if ($banModel->recordFailedAttempt($ip, 'Exceso de intentos fallidos de código 2FA', 5, 30)) {
+                AuditLogModel::log('ip_auto_banned', "IP bloqueada automáticamente durante 30 min por fallos 2FA ({$ip})", $pendingUserId, $ip);
+                (new NginxManager())->syncBannedIps($banModel->getActiveBans());
+            } else {
+                AuditLogModel::log('login_2fa_blocked', "IP bloqueada por intentos excesivos de 2FA ({$ip})", $pendingUserId, $ip);
+            }
             return redirect()->back()->with('error', 'Demasiados intentos de verificación 2FA. Espera 1 minuto.');
         }
 
@@ -147,10 +167,15 @@ class AuthController extends BaseController
         $totp = new TotpService();
         if (! $totp->verifyCode((string) $user['two_factor_secret'], $code)) {
             AuditLogModel::log('login_2fa_failed', "Código 2FA inválido para ({$user['email']})", (int) $user['id'], $ip);
+            if ($banModel->recordFailedAttempt($ip, "5 intentos fallidos de código 2FA ({$user['email']})", 5, 30)) {
+                AuditLogModel::log('ip_auto_banned', "IP bloqueada automáticamente durante 30 min por fallos 2FA ({$ip})", (int) $user['id'], $ip);
+                (new NginxManager())->syncBannedIps($banModel->getActiveBans());
+            }
             return redirect()->back()->with('error', 'El código de autenticación de 6 dígitos es incorrecto o ha expirado.');
         }
 
-        // 2FA superado: regenerar sesión y elevar a autenticado completo
+        // 2FA superado: limpiar contador de fallos, regenerar sesión y elevar a autenticado completo
+        $banModel->clearAttempts($ip);
         $session->remove('2fa_pending_user_id');
         $session->regenerate(true);
 

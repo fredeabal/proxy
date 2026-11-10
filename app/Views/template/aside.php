@@ -52,11 +52,20 @@
             </li>
 
             <li class="sidebar-item">
-              <a class="sidebar-link <?= $currentSection === 'admin' ? 'active' : '' ?>" href="<?= base_url('admin') ?>" aria-expanded="false">
+              <a class="sidebar-link <?= ($currentSection === 'admin' && $currentTab !== 'bans') ? 'active' : '' ?>" href="<?= base_url('admin') ?>" aria-expanded="false">
                 <span>
                   <i class="ti ti-settings"></i>
                 </span>
                 <span class="hide-menu">Administración</span>
+              </a>
+            </li>
+
+            <li class="sidebar-item">
+              <a class="sidebar-link <?= ($currentSection === 'admin' && $currentTab === 'bans') ? 'active' : '' ?>" href="<?= base_url('admin?tab=bans') ?>" aria-expanded="false">
+                <span>
+                  <i class="ti ti-ban"></i>
+                </span>
+                <span class="hide-menu">IPs Bloqueadas</span>
               </a>
             </li>
           </ul>

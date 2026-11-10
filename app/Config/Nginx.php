@@ -37,6 +37,11 @@ class Nginx extends BaseConfig
     public string $stagingPath = WRITEPATH . 'staging';
 
     /**
+     * Archivo de bloqueo global de IPs para Nginx.
+     */
+    public string $bannedIpsFile = '/etc/nginx/conf.d/proxy_manager_banned_ips.conf';
+
+    /**
      * Si está activado, en entornos donde no existe el ejecutor (ej. macOS/desarrollo local)
      * se simula la ejecución exitosa de forma segura sin romper la aplicación.
      */

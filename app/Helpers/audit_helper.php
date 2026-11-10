@@ -45,6 +45,9 @@ if (! function_exists('audit_label')) {
             'ssl_renew_success'             => 'renew ok',
             'ssl_renew_failed'              => 'renew fail',
             'ssl_delete'                    => 'ssl del',
+            'ip_banned'                     => 'ip ban',
+            'ip_auto_banned'                => 'auto ban',
+            'ip_unbanned'                   => 'ip unban',
         ];
 
         if (isset($map[$action])) {
@@ -61,10 +64,10 @@ if (! function_exists('audit_badge_class')) {
     function audit_badge_class(string $action): string
     {
         $act = strtolower($action);
-        if (str_contains($act, 'failed') || str_contains($act, 'blocked') || str_contains($act, 'delete')) {
+        if (str_contains($act, 'failed') || str_contains($act, 'blocked') || str_contains($act, 'delete') || str_contains($act, 'banned') && !str_contains($act, 'unbanned')) {
             return 'bg-danger-subtle text-danger border-danger';
         }
-        if (str_contains($act, 'create') || str_contains($act, 'success') || str_contains($act, 'enable')) {
+        if (str_contains($act, 'create') || str_contains($act, 'success') || str_contains($act, 'enable') || str_contains($act, 'unbanned')) {
             return 'bg-success-subtle text-success border-success';
         }
         if (str_contains($act, 'update') || str_contains($act, 'toggle') || str_contains($act, 'renew')

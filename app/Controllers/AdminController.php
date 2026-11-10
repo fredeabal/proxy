@@ -3,7 +3,9 @@
 namespace App\Controllers;
 
 use App\Models\AuditLogModel;
+use App\Models\BannedIpModel;
 use App\Models\ProxyHostModel;
+use App\Services\NginxManager;
 use App\Services\SystemMonitor;
 use App\Models\SettingModel;
 use App\Models\UserModel;
@@ -19,6 +21,7 @@ class AdminController extends BaseController
     protected TotpService $totpService;
     protected BackupManager $backupManager;
     protected AuditLogModel $auditModel;
+    protected BannedIpModel $banModel;
 
     public function __construct()
     {
@@ -27,15 +30,16 @@ class AdminController extends BaseController
         $this->totpService   = new TotpService();
         $this->backupManager = new BackupManager();
         $this->auditModel    = new AuditLogModel();
+        $this->banModel      = new BannedIpModel();
     }
 
     // ---------------------------------------------------------------------
-    // Vista unificada de Administración (Pestañas: Seguridad/2FA, SMTP, Backups, Auditoría)
+    // Vista unificada de Administración (Pestañas: Seguridad/2FA, IPs Bloqueadas, SMTP, Backups, Auditoría)
     // ---------------------------------------------------------------------
     public function index(): string
     {
         $tab = trim((string) ($this->request->getGet('tab') ?: 'security'));
-        if (!in_array($tab, ['security', 'smtp', 'backups', 'audit', 'logs'], true)) {
+        if (!in_array($tab, ['security', 'bans', 'smtp', 'backups', 'audit', 'logs'], true)) {
             $tab = 'security';
         }
 
@@ -100,6 +104,7 @@ class AdminController extends BaseController
         }
 
         $activeMenu = 'admin';
+        $bannedIps  = $this->banModel->getActiveBans();
 
         $data = [
             'title'            => 'Administración',
@@ -116,6 +121,8 @@ class AdminController extends BaseController
             'totalBackups'     => count($backups),
             'totalSizeHuman'   => $this->backupManager->formatBytes((int) $totalSize),
             'auditLogs'        => $auditLogs,
+            'bannedIps'        => $bannedIps,
+            'currentVisitorIp' => $this->request->getIPAddress(),
             'nginxStatus'      => $monitor->getNginxStatus(),
             'cpuLoad'          => $monitor->getCpuLoad(),
             'memory'           => $monitor->getMemoryUsage(),
@@ -414,6 +421,70 @@ class AdminController extends BaseController
             return redirect()->to(base_url('admin?tab=backups'))
                 ->with('error', $e->getMessage());
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Gestión de IPs Bloqueadas (Fail2ban Interno + Cloudflare Real-IP)
+    // ---------------------------------------------------------------------
+    public function banIp(): ResponseInterface
+    {
+        $ip       = trim((string) $this->request->getPost('ip_address'));
+        $reason   = trim((string) $this->request->getPost('reason'));
+        $duration = (int) ($this->request->getPost('duration') ?? 0);
+
+        if ($ip === '' || filter_var($ip, FILTER_VALIDATE_IP) === false) {
+            return redirect()->to(base_url('admin?tab=bans'))
+                ->withInput()
+                ->with('error', 'Por favor introduce una dirección IPv4 o IPv6 válida.');
+        }
+
+        // Prevenir que el administrador se bloquee a sí mismo o a loopback local
+        $myIp = $this->request->getIPAddress();
+        if ($ip === $myIp || in_array($ip, ['127.0.0.1', '::1'], true)) {
+            return redirect()->to(base_url('admin?tab=bans'))
+                ->withInput()
+                ->with('error', "Por seguridad, no puedes bloquear tu propia dirección IP ({$ip}) ni el loopback local.");
+        }
+
+        try {
+            $this->banModel->banIp(
+                $ip,
+                $reason !== '' ? $reason : 'Bloqueo manual desde el panel',
+                $duration,
+                'admin'
+            );
+
+            // Sincronizar con Nginx
+            (new NginxManager())->syncBannedIps($this->banModel->getActiveBans());
+
+            $durationText = $duration <= 0 ? 'permanentemente' : "durante {$duration} min";
+            AuditLogModel::log('ip_banned', "IP bloqueada manualmente {$durationText}: {$ip}");
+
+            return redirect()->to(base_url('admin?tab=bans'))
+                ->with('success', "La dirección IP {$ip} ha sido bloqueada {$durationText}.");
+        } catch (InvalidArgumentException $e) {
+            return redirect()->to(base_url('admin?tab=bans'))
+                ->withInput()
+                ->with('error', $e->getMessage());
+        }
+    }
+
+    public function unbanIp(int $id): ResponseInterface
+    {
+        $removed = $this->banModel->unbanById($id);
+        if (!$removed) {
+            return redirect()->to(base_url('admin?tab=bans'))
+                ->with('error', 'El registro de bloqueo solicitado no existe o ya había expirado.');
+        }
+
+        // Sincronizar con Nginx
+        (new NginxManager())->syncBannedIps($this->banModel->getActiveBans());
+
+        $ip = $removed['ip_address'] ?? (string) $id;
+        AuditLogModel::log('ip_unbanned', "IP desbloqueada manualmente: {$ip}");
+
+        return redirect()->to(base_url('admin?tab=bans'))
+            ->with('success', "La dirección IP {$ip} ha sido desbloqueada con éxito.");
     }
 }
 

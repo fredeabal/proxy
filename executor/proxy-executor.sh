@@ -297,6 +297,52 @@ EOF
         exit $?
         ;;
 
+    sync-banned-ips)
+        if [ $# -ne 1 ]; then
+            error_exit "Uso: $0 sync-banned-ips <staging_file>" 25
+        fi
+
+        STAGING_FILE="$1"
+        if [ ! -f "${STAGING_FILE}" ]; then
+            error_exit "Archivo de staging de IPs no encontrado: ${STAGING_FILE}" 26
+        fi
+
+        REAL_STAGING="$(realpath -q "${STAGING_FILE}" 2>/dev/null || echo "")"
+        if [[ -z "${REAL_STAGING}" ]]; then
+            error_exit "No se pudo resolver la ruta del archivo de IPs bloqueadas." 27
+        fi
+
+        if [[ "${REAL_STAGING}" != "${STAGING_DIR}/"* ]] && [[ "${REAL_STAGING}" != /var/www/*/writable/staging/* ]] && [[ "${REAL_STAGING}" != /tmp/* ]] && [[ "${REAL_STAGING}" != /var/tmp/* ]]; then
+            error_exit "Ruta de staging no autorizada: ${REAL_STAGING}" 28
+        fi
+
+        # Validar línea por línea que solo contenga comentarios o directivas 'deny <ip>;'
+        DENY_REGEX="^deny[[:space:]]+[0-9a-fA-F:\.]+;$"
+        while IFS= read -r line || [ -n "$line" ]; do
+            trimmed="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            if [ -z "$trimmed" ] || [[ "$trimmed" =~ ^# ]]; then
+                continue
+            fi
+            if ! [[ "$trimmed" =~ ${DENY_REGEX} ]]; then
+                error_exit "Directiva no permitida en archivo de bloqueo de IPs: ${trimmed}" 29
+            fi
+        done < "${REAL_STAGING}"
+
+        mkdir -p /etc/nginx/conf.d
+        DEST_BANNED="/etc/nginx/conf.d/proxy_manager_banned_ips.conf"
+        cp -f "${REAL_STAGING}" "${DEST_BANNED}"
+        chmod 0644 "${DEST_BANNED}"
+
+        if ! nginx -t 2>&1; then
+            rm -f "${DEST_BANNED}"
+            error_exit "Error de sintaxis Nginx al aplicar lista de IPs bloqueadas." 30
+        fi
+
+        systemctl reload nginx 2>&1 || true
+        echo "OK: Lista de IPs bloqueadas sincronizada en Nginx."
+        exit 0
+        ;;
+
     *)
         error_exit "Acción no reconocida: ${ACTION}" 15
         ;;

@@ -280,6 +280,48 @@ class NginxManager
     }
 
     /**
+     * Sincroniza la lista de IPs bloqueadas con Nginx generando las directivas `deny <ip>;`.
+     *
+     * @param array<int, array<string, mixed>> $activeBans
+     * @return array{success: bool, error: ?string, output: ?string, content: string}
+     */
+    public function syncBannedIps(array $activeBans): array
+    {
+        $lines = [
+            '# ==============================================================================',
+            '# Reverse Proxy Manager - Lista Negra de IPs (Fail2ban Interno / Cloudflare Real-IP)',
+            '# Generado automáticamente - NO EDITAR MANUALMENTE',
+            '# Fecha: ' . date('Y-m-d H:i:s'),
+            '# ==============================================================================',
+        ];
+
+        $seen = [];
+        foreach ($activeBans as $ban) {
+            $ip = trim((string) ($ban['ip_address'] ?? ''));
+            if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP) !== false && ! isset($seen[$ip])) {
+                $seen[$ip] = true;
+                $lines[] = "deny {$ip};";
+            }
+        }
+
+        $lines[] = '';
+        $content = implode("\n", $lines);
+
+        $tempFile = rtrim($this->config->stagingPath, '/') . '/banned_ips.conf';
+        @file_put_contents($tempFile, $content);
+
+        $destFile = $this->config->bannedIpsFile;
+        $execResult = $this->callExecutor('sync-banned-ips', [$tempFile], $tempFile, $destFile, false);
+
+        return [
+            'success' => $execResult['success'],
+            'error'   => $execResult['error'],
+            'output'  => $execResult['output'],
+            'content' => $content,
+        ];
+    }
+
+    /**
      * Invoca el ejecutor privilegiado con control de fallos y modo desarrollo simulado.
      */
     protected function callExecutor(

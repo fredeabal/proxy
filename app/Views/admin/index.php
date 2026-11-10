@@ -54,6 +54,21 @@ $totpQrCode = $totpQrCode ?? '';
     </button>
   </li>
   <li class="nav-item" role="presentation">
+    <button class="nav-link <?= $currentTab === 'bans' ? 'active' : '' ?>"
+            id="tab-bans-btn"
+            data-bs-toggle="tab"
+            data-bs-target="#tab-bans"
+            type="button"
+            role="tab"
+            aria-controls="tab-bans"
+            aria-selected="<?= $currentTab === 'bans' ? 'true' : 'false' ?>">
+      <i class="ti ti-ban me-1"></i> IPs Bloqueadas
+      <?php if (!empty($bannedIps)): ?>
+        <span class="badge rounded-pill bg-danger ms-1"><?= count($bannedIps) ?></span>
+      <?php endif; ?>
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
     <button class="nav-link <?= $currentTab === 'smtp' ? 'active' : '' ?>"
             id="tab-smtp-btn"
             data-bs-toggle="tab"
@@ -236,6 +251,13 @@ $totpQrCode = $totpQrCode ?? '';
         </form>
       </div>
     </div>
+  </div>
+
+  <!-- =======================================================================
+       1.B PESTAÑA: IPs BLOQUEADAS (FAIL2BAN INTERNO + CLOUDFLARE REAL-IP)
+       ======================================================================= -->
+  <div class="tab-pane fade <?= $currentTab === 'bans' ? 'show active' : '' ?>" id="tab-bans" role="tabpanel" aria-labelledby="tab-bans-btn">
+    <?= view('admin/_bans', get_defined_vars()) ?>
   </div>
 
   <!-- =======================================================================

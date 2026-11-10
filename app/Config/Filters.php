@@ -36,6 +36,7 @@ class Filters extends BaseFilters
         'performance'   => PerformanceMetrics::class,
         'auth'          => \App\Filters\AuthFilter::class,
         'sec_headers'   => \App\Filters\SecurityHeadersFilter::class,
+        'ip_ban'        => \App\Filters\IpBanFilter::class,
     ];
 
     /**
@@ -74,6 +75,7 @@ class Filters extends BaseFilters
      */
     public array $globals = [
         'before' => [
+            'ip_ban',
             'csrf',
             'invalidchars',
         ],

@@ -56,6 +56,8 @@ $routes->group('', ['filter' => 'auth'], static function (RouteCollection $route
     $routes->post('admin/backups/restore', 'AdminController::restoreBackup');
     $routes->post('admin/backups/delete', 'AdminController::deleteBackup');
     $routes->get('admin/backups/download/(:segment)', 'AdminController::downloadBackup/$1');
+    $routes->post('admin/bans/add', 'AdminController::banIp');
+    $routes->post('admin/bans/unban/(:num)', 'AdminController::unbanIp/$1');
 
     // Redirecciones y compatibilidad legacy (/settings y /backups)
     $routes->get('settings', static fn() => redirect()->to(base_url('admin?tab=security')));
