@@ -9,7 +9,7 @@ $routes->get('login', 'AuthController::login');
 $routes->post('login', 'AuthController::attemptLogin');
 $routes->get('login/2fa', 'AuthController::verify2faForm');
 $routes->post('login/2fa', 'AuthController::attemptVerify2fa');
-$routes->get('logout', 'AuthController::logout');
+$routes->match(['get', 'post'], 'logout', 'AuthController::logout');
 
 // Redirección raíz
 $routes->get('/', static function () {

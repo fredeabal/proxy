@@ -71,9 +71,12 @@
                     </p>
                   </div>
                   <div class="p-3">
-                    <a href="<?= base_url('logout') ?>" class="btn btn-outline-danger btn-sm w-100 d-flex align-items-center justify-content-center gap-2">
-                      <i class="ti ti-logout"></i> Cerrar Sesión
-                    </a>
+                    <form action="<?= base_url('logout') ?>" method="post" class="m-0 p-0">
+                      <?= csrf_field() ?>
+                      <button type="submit" class="btn btn-outline-danger btn-sm w-100 d-flex align-items-center justify-content-center gap-2">
+                        <i class="ti ti-logout"></i> Cerrar Sesión
+                      </button>
+                    </form>
                   </div>
                 </div>
               </li>

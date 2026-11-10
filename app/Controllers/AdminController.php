@@ -236,6 +236,13 @@ class AdminController extends BaseController
                 ->with('error', 'Primero debes configurar el servidor SMTP (Host).');
         }
 
+        // Mitigación SSRF: Bloquear hostnames de metadatos cloud en prueba SMTP
+        $lowerHost = strtolower($host);
+        if (in_array($lowerHost, ['169.254.169.254', 'metadata.google.internal', 'metadata.internal', 'instance-data'], true)) {
+            return redirect()->to(base_url('admin?tab=smtp'))
+                ->with('error', 'Host SMTP no permitido por políticas de seguridad.');
+        }
+
         $config = [
             'protocol'   => 'smtp',
             'SMTPHost'   => $host,

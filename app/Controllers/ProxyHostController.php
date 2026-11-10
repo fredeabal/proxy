@@ -762,17 +762,28 @@ class ProxyHostController extends BaseController
         }
 
         $result = $this->sslManager->renewCertificate((int) $certId);
-        $referer = $this->request->getServer('HTTP_REFERER') ?: base_url('proxy-hosts');
+        $referer = $this->request->getServer('HTTP_REFERER');
+        $fallbackUrl = base_url('proxy-hosts');
+        $redirectUrl = $fallbackUrl;
+
+        // Validar que el HTTP_REFERER sea interno y pertenezca a este host para prevenir Open Redirect
+        if (!empty($referer)) {
+            $parsedReferer = parse_url($referer);
+            $parsedApp = parse_url(base_url());
+            if (isset($parsedReferer['host']) && isset($parsedApp['host']) && strtolower($parsedReferer['host']) === strtolower($parsedApp['host'])) {
+                $redirectUrl = $referer;
+            }
+        }
 
         if (!$result['success']) {
-            return redirect()->to($referer)
+            return redirect()->to($redirectUrl)
                 ->with('error', $result['error'] ?? 'Error al renovar el certificado SSL.');
         }
 
         // Recargar Nginx con el nuevo certificado
         $this->nginxManager->applyHost($this->proxyModel->find($id));
 
-        return redirect()->to($referer)
+        return redirect()->to($redirectUrl)
             ->with('success', $result['message'] ?? 'Certificado SSL renovado con éxito.');
     }
 }

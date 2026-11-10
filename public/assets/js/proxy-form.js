@@ -239,8 +239,15 @@
         } else {
           if (alertBox) {
             alertBox.classList.remove('d-none');
-            alertBox.innerHTML = '<strong>Error de sintaxis Nginx:</strong><br><pre class="mb-0 text-white mt-1">' + 
-              (res.body.message || 'Error desconocido') + '</pre>';
+            alertBox.innerHTML = '';
+            const strong = document.createElement('strong');
+            strong.textContent = 'Error de sintaxis Nginx:';
+            alertBox.appendChild(strong);
+            alertBox.appendChild(document.createElement('br'));
+            const pre = document.createElement('pre');
+            pre.className = 'mb-0 text-white mt-1';
+            pre.textContent = res.body.message || 'Error desconocido';
+            alertBox.appendChild(pre);
           }
           if (typeof Swal !== 'undefined') {
             Swal.fire({

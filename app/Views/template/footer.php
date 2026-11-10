@@ -72,18 +72,25 @@
         showCloseButton: false
       });
 
+      function escapeHtml(str) {
+        if (!str) return '';
+        const p = document.createElement('p');
+        p.textContent = str;
+        return p.innerHTML;
+      }
+
       if (toastSuccess) {
         systemAlert.fire({ 
           icon: 'success', 
           title: '¡Completado!', 
-          html: `<div class="text-center">${toastSuccess}</div>` 
+          html: `<div class="text-center">${escapeHtml(toastSuccess)}</div>` 
         });
       }
       if (toastError) {
         systemAlert.fire({ 
           icon: 'error', 
           title: 'Error', 
-          html: `<div class="text-center">${toastError}</div>` 
+          html: `<div class="text-center">${escapeHtml(toastError)}</div>` 
         });
       }
       if (toastErrors) {
@@ -91,8 +98,8 @@
           ? (Array.isArray(toastErrors) ? toastErrors : Object.values(toastErrors))
           : [toastErrors];
         const errorContent = errorList.length > 1
-          ? `<ul class="text-start mb-0 ps-3" style="display: inline-block;">` + errorList.map(e => `<li>${e}</li>`).join('') + `</ul>`
-          : `<div class="text-center">${errorList[0]}</div>`;
+          ? `<ul class="text-start mb-0 ps-3" style="display: inline-block;">` + errorList.map(e => `<li>${escapeHtml(e)}</li>`).join('') + `</ul>`
+          : `<div class="text-center">${escapeHtml(errorList[0])}</div>`;
         systemAlert.fire({ 
           icon: 'error', 
           title: 'Error de Validación', 
