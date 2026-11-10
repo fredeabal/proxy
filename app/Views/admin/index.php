@@ -428,9 +428,9 @@ $totpQrCode = $totpQrCode ?? '';
                 <tr>
                   <th class="ps-4">IP / Rango CIDR</th>
                   <th>Motivo</th>
-                  <th>Origen</th>
+                  <th class="text-center">Origen</th>
                   <th class="text-center">Intentos</th>
-                  <th>Expiración</th>
+                  <th class="text-center">Expiración</th>
                   <th class="text-end pe-4">Acción</th>
                 </tr>
               </thead>
@@ -449,13 +449,13 @@ $totpQrCode = $totpQrCode ?? '';
                     <td>
                       <span class="small text-body text-break"><?= esc($ban['reason'] ?? 'Bloqueo de seguridad') ?></span>
                     </td>
-                    <td>
+                    <td class="text-center">
                       <span class="small text-muted"><?= ($ban['created_by'] ?? '') === 'system' ? 'Auto-Ban' : 'Manual' ?></span>
                     </td>
                     <td class="text-center font-monospace small text-muted">
                       <?= (int) ($ban['failed_attempts'] ?? 0) ?>
                     </td>
-                    <td>
+                    <td class="text-center">
                       <?php if ((int) ($ban['is_permanent'] ?? 0) === 1): ?>
                         <span class="small fw-semibold text-danger">Permanente</span>
                       <?php else: ?>
