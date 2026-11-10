@@ -124,7 +124,7 @@ final class IpBanSecurityTest extends CIUnitTestCase
         $res->assertStatus(200);
         $res->assertSee('IPs Bloqueadas');
         $res->assertSee('198.51.100.77');
-        $res->assertSee('CF-Connecting-IP Activo');
+        $res->assertSee('Bloquear IP o Rango CIDR');
     }
 
     public function testCidrRangeBanBlocksMatchingIpsAndPreventsSelfRangeBan(): void

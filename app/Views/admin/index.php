@@ -63,9 +63,6 @@ $totpQrCode = $totpQrCode ?? '';
             aria-controls="tab-bans"
             aria-selected="<?= $currentTab === 'bans' ? 'true' : 'false' ?>">
       <i class="ti ti-ban me-1"></i> IPs Bloqueadas
-      <?php if (!empty($bannedIps)): ?>
-        <span class="badge rounded-pill bg-danger ms-1"><?= count($bannedIps) ?></span>
-      <?php endif; ?>
     </button>
   </li>
   <li class="nav-item" role="presentation">
@@ -261,126 +258,133 @@ $totpQrCode = $totpQrCode ?? '';
   $totalBanned = count($bannedList);
   $autoBannedCount = count(array_filter($bannedList, static fn($b) => ($b['created_by'] ?? '') === 'system'));
   $permBannedCount = count(array_filter($bannedList, static fn($b) => (int) ($b['is_permanent'] ?? 0) === 1));
+  $tempBannedCount = max(0, $totalBanned - $permBannedCount);
   ?>
   <div class="tab-pane fade <?= $currentTab === 'bans' ? 'show active' : '' ?>" id="tab-bans" role="tabpanel" aria-labelledby="tab-bans-btn">
 
-    <!-- Métricas de Protección IP y Cloudflare -->
-    <div class="row g-3 mb-4">
+    <!-- Tarjetas Resumen de Métricas Rápidas (Mobile-First: metrics-summary-row) -->
+    <div class="row g-2 g-md-3 mb-3 mb-md-4 metrics-summary-row">
       <div class="col-6 col-md-3">
-        <div class="card border shadow-none mb-0">
+        <div class="card border shadow-none mb-0 h-100">
           <div class="card-body p-3 d-flex align-items-center gap-3">
-            <div class="round-40 d-flex align-items-center justify-content-center bg-danger-subtle text-danger rounded-circle">
+            <div class="round-40 d-flex align-items-center justify-content-center bg-danger-subtle text-danger rounded-circle flex-shrink-0">
               <i class="ti ti-ban fs-5"></i>
             </div>
             <div>
-              <span class="text-muted small d-block">IPs Bloqueadas</span>
-              <h5 class="fw-bold mb-0"><?= $totalBanned ?></h5>
+              <span class="text-muted fs-2 text-uppercase fw-semibold d-block">Bloqueadas</span>
+              <h4 class="fw-bold mb-0"><?= $totalBanned ?></h4>
             </div>
           </div>
         </div>
       </div>
       <div class="col-6 col-md-3">
-        <div class="card border shadow-none mb-0">
+        <div class="card border shadow-none mb-0 h-100">
           <div class="card-body p-3 d-flex align-items-center gap-3">
-            <div class="round-40 d-flex align-items-center justify-content-center bg-warning-subtle text-warning rounded-circle">
-              <i class="ti ti-shield-exclamation fs-5"></i>
+            <div class="round-40 d-flex align-items-center justify-content-center bg-warning-subtle text-warning rounded-circle flex-shrink-0">
+              <i class="ti ti-shield-lock fs-5"></i>
             </div>
             <div>
-              <span class="text-muted small d-block">Auto-Ban (Login)</span>
-              <h5 class="fw-bold mb-0"><?= $autoBannedCount ?></h5>
+              <span class="text-muted fs-2 text-uppercase fw-semibold d-block">Auto-Ban</span>
+              <h4 class="fw-bold mb-0"><?= $autoBannedCount ?></h4>
             </div>
           </div>
         </div>
       </div>
       <div class="col-6 col-md-3">
-        <div class="card border shadow-none mb-0">
+        <div class="card border shadow-none mb-0 h-100">
           <div class="card-body p-3 d-flex align-items-center gap-3">
-            <div class="round-40 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle">
+            <div class="round-40 d-flex align-items-center justify-content-center bg-info-subtle text-info rounded-circle flex-shrink-0">
+              <i class="ti ti-clock fs-5"></i>
+            </div>
+            <div>
+              <span class="text-muted fs-2 text-uppercase fw-semibold d-block">Temporales</span>
+              <h4 class="fw-bold mb-0"><?= $tempBannedCount ?></h4>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card border shadow-none mb-0 h-100">
+          <div class="card-body p-3 d-flex align-items-center gap-3">
+            <div class="round-40 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle flex-shrink-0">
               <i class="ti ti-lock fs-5"></i>
             </div>
             <div>
-              <span class="text-muted small d-block">Permanentes</span>
-              <h5 class="fw-bold mb-0"><?= $permBannedCount ?></h5>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="col-6 col-md-3">
-        <div class="card border shadow-none mb-0">
-          <div class="card-body p-3 d-flex align-items-center gap-3">
-            <div class="round-40 d-flex align-items-center justify-content-center bg-success-subtle text-success rounded-circle">
-              <i class="ti ti-cloud-lock fs-5"></i>
-            </div>
-            <div>
-              <span class="text-muted small d-block">Cloudflare Real-IP</span>
-              <span class="badge bg-success-subtle text-success border border-success">CF-Connecting-IP Activo</span>
+              <span class="text-muted fs-2 text-uppercase fw-semibold d-block">Permanentes</span>
+              <h4 class="fw-bold mb-0"><?= $permBannedCount ?></h4>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Formulario para Bloquear una IP Manualmente -->
+    <!-- Formulario para Bloquear una IP o Rango CIDR Manualmente -->
     <div class="card border shadow-none mb-4">
-      <div class="card-header bg-transparent border-bottom py-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
-        <div class="d-flex align-items-center gap-2">
-          <div class="round-32 d-flex align-items-center justify-content-center bg-danger-subtle text-danger rounded-circle">
-            <i class="ti ti-shield-off fs-5"></i>
-          </div>
-          <div>
-            <h5 class="card-title fw-semibold mb-0">Bloquear IP o Rango CIDR</h5>
-          </div>
+      <div class="card-header bg-transparent border-bottom py-3 d-flex align-items-center gap-2">
+        <div class="round-32 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle flex-shrink-0">
+          <i class="ti ti-ban fs-5"></i>
         </div>
-        <span class="small text-muted">
-          Tu IP actual detectada: <code class="px-2 py-1 rounded bg-light"><?= esc($currentVisitorIp ?? '127.0.0.1') ?></code>
-        </span>
+        <h5 class="card-title fw-semibold mb-0">Bloquear IP o Rango CIDR</h5>
       </div>
-      <div class="card-body p-4">
+      <div class="card-body p-3 p-md-4">
         <form method="post" action="<?= base_url('admin/bans/add') ?>">
           <?= csrf_field() ?>
           <div class="row g-3 align-items-end">
+            <!-- IP o Rango CIDR -->
             <div class="col-12 col-md-4">
-              <label for="ban_ip_address" class="form-label fw-semibold">IP o Rango CIDR (IPv4 / IPv6) <span class="text-danger">*</span></label>
+              <label for="ban_ip_address" class="form-label fw-semibold">IP o Rango CIDR <span class="text-danger">*</span></label>
               <div class="input-group">
-                <span class="input-group-text bg-light"><i class="ti ti-network"></i></span>
+                <span class="input-group-text bg-light"><i class="ti ti-world"></i></span>
                 <input type="text"
                        id="ban_ip_address"
                        name="ip_address"
                        class="form-control font-monospace"
-                       placeholder="Ej. 203.0.113.50 o 203.0.113.0/24"
+                       placeholder="Ej. 203.0.113.0/24"
                        value="<?= esc(old('ip_address', '')) ?>"
                        required>
               </div>
             </div>
 
+            <!-- Duración -->
             <div class="col-12 col-md-3">
-              <label for="ban_duration" class="form-label fw-semibold">Duración del Bloqueo</label>
-              <select id="ban_duration" name="duration" class="form-select">
-                <option value="30">30 minutos</option>
-                <option value="60">1 hora</option>
-                <option value="1440">24 horas</option>
-                <option value="10080">7 días</option>
-                <option value="0" selected>Permanente</option>
-              </select>
+              <label for="ban_duration" class="form-label fw-semibold">Duración</label>
+              <div class="input-group">
+                <span class="input-group-text bg-light"><i class="ti ti-clock"></i></span>
+                <select id="ban_duration" name="duration" class="form-select">
+                  <option value="15">15 minutos</option>
+                  <option value="30">30 minutos</option>
+                  <option value="60">1 hora</option>
+                  <option value="1440">24 horas</option>
+                  <option value="10080">7 días</option>
+                  <option value="0" selected>Permanente</option>
+                </select>
+              </div>
             </div>
 
+            <!-- Motivo + Botón Icono Primary -->
             <div class="col-12 col-md-5">
               <label for="ban_reason" class="form-label fw-semibold">Motivo</label>
-              <div class="input-group">
-                <input type="text"
-                       id="ban_reason"
-                       name="reason"
-                       class="form-control"
-                       placeholder="Ej. Bot malicioso / Rango de escaneo"
-                       value="<?= esc(old('reason', '')) ?>">
-                <button type="submit" class="btn btn-danger d-inline-flex align-items-center gap-1 px-3">
-                  <i class="ti ti-ban"></i> Bloquear
+              <div class="d-flex align-items-stretch gap-2">
+                <div class="input-group">
+                  <span class="input-group-text bg-light"><i class="ti ti-file-text"></i></span>
+                  <input type="text"
+                         id="ban_reason"
+                         name="reason"
+                         class="form-control"
+                         placeholder="Ej. Bot malicioso"
+                         value="<?= esc(old('reason', '')) ?>">
+                </div>
+                <button type="submit"
+                        class="btn btn-primary px-3 d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                        title="Bloquear IP o Rango CIDR"
+                        aria-label="Bloquear IP o Rango CIDR">
+                  <i class="ti ti-ban fs-5"></i>
                 </button>
               </div>
             </div>
           </div>
           <div class="form-text small text-muted mt-2">
-            Admite direcciones IP individuales (<code>203.0.113.50</code>) y rangos de subred CIDR (<code>203.0.113.0/24</code> o <code>2001:db8::/32</code>). Además, las IPs con 5 intentos fallidos de login o 2FA se bloquean automáticamente durante 30 minutos.
+            Acepta IPs (<code>203.0.113.50</code>) o rangos CIDR (<code>203.0.113.0/24</code>). Auto-bloqueo de 30 min tras 5 fallos.
           </div>
         </form>
       </div>
@@ -388,80 +392,125 @@ $totpQrCode = $totpQrCode ?? '';
 
     <!-- Tabla de IPs y Rangos Bloqueados Activos -->
     <div class="card border shadow-none mb-0">
-      <div class="card-header bg-transparent border-bottom py-3 d-flex align-items-center justify-content-between">
-        <div class="d-flex align-items-center gap-2">
-          <div class="round-32 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle">
-            <i class="ti ti-list-details fs-5"></i>
-          </div>
-          <h5 class="card-title fw-semibold mb-0">Lista Negra Activa (Panel &amp; Nginx)</h5>
+      <div class="card-header bg-transparent border-bottom py-3 d-flex align-items-center gap-2">
+        <div class="round-32 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle flex-shrink-0">
+          <i class="ti ti-shield-lock fs-5"></i>
         </div>
-        <span class="badge bg-primary-subtle text-primary border border-primary"><?= $totalBanned ?> activas</span>
+        <h5 class="card-title fw-semibold mb-0">Lista Negra Activa</h5>
       </div>
+
+      <?php if (!empty($bannedList)): ?>
+        <!-- Buscador rápido en tiempo real -->
+        <div class="card-body p-3 border-bottom">
+          <div class="input-group">
+            <span class="input-group-text bg-transparent"><i class="ti ti-search"></i></span>
+            <input type="search"
+                   id="banSearchInput"
+                   class="form-control"
+                   placeholder="Buscar por IP, rango o motivo...">
+          </div>
+        </div>
+      <?php endif; ?>
+
       <div class="card-body p-0">
         <?php if (empty($bannedList)): ?>
           <div class="text-center py-5 px-3">
-            <div class="round-48 d-inline-flex align-items-center justify-content-center bg-success-subtle text-success rounded-circle mb-3">
-              <i class="ti ti-shield-check fs-4"></i>
+            <div class="round-48 d-inline-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle mb-2">
+              <i class="ti ti-shield-check fs-5"></i>
             </div>
-            <h6 class="fw-semibold mb-1">No hay direcciones IP ni rangos bloqueados actualmente</h6>
-            <p class="text-muted small mb-0">
-              Cualquier IP que falle 5 veces en el inicio de sesión o que agregues manualmente (IP o rango CIDR) aparecerá aquí.
-            </p>
+            <p class="text-muted mb-0">Sin IPs ni rangos bloqueados actualmente.</p>
           </div>
         <?php else: ?>
-          <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
+          <!-- Vista Escritorio (>= 768px) -->
+          <div class="table-responsive d-none d-md-block">
+            <table class="table table-hover align-middle mb-0" id="bannedIpsTable">
               <thead class="table-light">
                 <tr>
                   <th class="ps-4">IP / Rango CIDR</th>
                   <th>Motivo</th>
                   <th>Origen</th>
-                  <th>Intentos</th>
+                  <th class="text-center">Intentos</th>
                   <th>Expiración</th>
                   <th class="text-end pe-4">Acción</th>
                 </tr>
               </thead>
               <tbody>
                 <?php foreach ($bannedList as $ban): ?>
-                  <tr>
+                  <?php $isCidr = str_contains((string) $ban['ip_address'], '/'); ?>
+                  <tr class="ban-item">
                     <td class="ps-4">
-                      <code class="fw-bold text-danger"><?= esc($ban['ip_address']) ?></code>
-                      <?php if (str_contains((string) $ban['ip_address'], '/')): ?>
-                        <span class="badge bg-dark-subtle text-body border ms-1">Rango CIDR</span>
-                      <?php endif; ?>
+                      <div class="d-flex align-items-center gap-2">
+                        <div class="round-32 d-flex align-items-center justify-content-center bg-danger-subtle text-danger rounded-circle flex-shrink-0">
+                          <i class="ti <?= $isCidr ? 'ti-world' : 'ti-ban' ?> fs-5"></i>
+                        </div>
+                        <span class="fw-semibold font-monospace text-body text-break"><?= esc($ban['ip_address']) ?></span>
+                      </div>
                     </td>
                     <td>
-                      <span class="small"><?= esc($ban['reason'] ?? 'Bloqueo de seguridad') ?></span>
+                      <span class="small text-body text-break"><?= esc($ban['reason'] ?? 'Bloqueo de seguridad') ?></span>
                     </td>
                     <td>
-                      <?php if (($ban['created_by'] ?? '') === 'system'): ?>
-                        <span class="badge bg-warning-subtle text-warning border border-warning">Auto-Ban</span>
-                      <?php else: ?>
-                        <span class="badge bg-danger-subtle text-danger border border-danger">Manual</span>
-                      <?php endif; ?>
+                      <span class="small text-muted"><?= ($ban['created_by'] ?? '') === 'system' ? 'Auto-Ban' : 'Manual' ?></span>
                     </td>
-                    <td>
-                      <span class="badge bg-secondary-subtle text-secondary"><?= (int) ($ban['failed_attempts'] ?? 0) ?></span>
+                    <td class="text-center font-monospace small text-muted">
+                      <?= (int) ($ban['failed_attempts'] ?? 0) ?>
                     </td>
                     <td>
                       <?php if ((int) ($ban['is_permanent'] ?? 0) === 1): ?>
-                        <span class="badge bg-danger-subtle text-danger border border-danger">Permanente</span>
+                        <span class="small fw-semibold text-danger">Permanente</span>
                       <?php else: ?>
-                        <span class="small text-muted"><?= esc((string) ($ban['expires_at'] ?? '')) ?></span>
+                        <span class="small text-muted font-monospace"><?= esc((string) ($ban['expires_at'] ?? '')) ?></span>
                       <?php endif; ?>
                     </td>
                     <td class="text-end pe-4">
                       <form method="post" action="<?= base_url('admin/bans/unban/' . (int) $ban['id']) ?>" class="d-inline">
                         <?= csrf_field() ?>
-                        <button type="submit" class="btn btn-outline-success btn-sm d-inline-flex align-items-center gap-1">
-                          <i class="ti ti-lock-open"></i> Desbloquear
+                        <button type="submit"
+                                class="btn btn-primary btn-sm px-2 py-1 d-inline-flex align-items-center justify-content-center"
+                                title="Desbloquear <?= esc($ban['ip_address']) ?>"
+                                aria-label="Desbloquear <?= esc($ban['ip_address']) ?>">
+                          <i class="ti ti-lock-open fs-5"></i>
                         </button>
                       </form>
                     </td>
                   </tr>
                 <?php endforeach; ?>
+                <tr id="banNoResultsRow" class="d-none">
+                  <td colspan="6" class="text-center py-4 text-muted">
+                    No se encontraron bloqueos que coincidan con la búsqueda.
+                  </td>
+                </tr>
               </tbody>
             </table>
+          </div>
+
+          <!-- Tarjetas Móviles (< 768px) -->
+          <div class="d-block d-md-none p-3" id="banMobileCards">
+            <?php foreach ($bannedList as $ban): ?>
+              <div class="card border shadow-none mb-2 p-3 mobile-card-item ban-item">
+                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                  <span class="fw-semibold font-monospace text-body text-break"><?= esc($ban['ip_address']) ?></span>
+                  <span class="small fw-semibold <?= (int) ($ban['is_permanent'] ?? 0) === 1 ? 'text-danger' : 'text-warning' ?>">
+                    <?= (int) ($ban['is_permanent'] ?? 0) === 1 ? 'Permanente' : 'Temporal' ?>
+                  </span>
+                </div>
+                <div class="small text-body mb-2 text-break"><?= esc($ban['reason'] ?? 'Bloqueo de seguridad') ?></div>
+                <div class="d-flex align-items-center justify-content-between pt-2 border-top">
+                  <span class="small text-muted">
+                    <?= ($ban['created_by'] ?? '') === 'system' ? 'Auto-Ban (' . (int) ($ban['failed_attempts'] ?? 0) . ' intentos)' : 'Manual' ?>
+                  </span>
+                  <form method="post" action="<?= base_url('admin/bans/unban/' . (int) $ban['id']) ?>" class="d-inline">
+                    <?= csrf_field() ?>
+                    <button type="submit"
+                            class="btn btn-primary btn-sm btn-touch-target d-inline-flex align-items-center justify-content-center"
+                            title="Desbloquear <?= esc($ban['ip_address']) ?>"
+                            aria-label="Desbloquear <?= esc($ban['ip_address']) ?>">
+                      <i class="ti ti-lock-open fs-5"></i>
+                    </button>
+                  </form>
+                </div>
+              </div>
+            <?php endforeach; ?>
           </div>
         <?php endif; ?>
       </div>
@@ -1080,6 +1129,24 @@ $totpQrCode = $totpQrCode ?? '';
       } else {
         auditFilter.addEventListener('change', applyAuditFilter);
       }
+    }
+
+    // 5. Filtrado en tiempo real de IPs y Rangos CIDR Bloqueados
+    const banSearch = document.getElementById('banSearchInput');
+    const banRows   = document.querySelectorAll('.ban-item');
+    const banNoRow  = document.getElementById('banNoResultsRow');
+
+    if (banSearch && banRows.length > 0) {
+      banSearch.addEventListener('input', function () {
+        const q = banSearch.value.toLowerCase().trim();
+        let visible = 0;
+        banRows.forEach(row => {
+          const matches = (q === '' || row.textContent.toLowerCase().includes(q));
+          row.classList.toggle('d-none', !matches);
+          if (matches) visible++;
+        });
+        if (banNoRow) banNoRow.classList.toggle('d-none', visible > 0);
+      });
     }
   });
 </script>
