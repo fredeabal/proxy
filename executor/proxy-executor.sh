@@ -316,8 +316,8 @@ EOF
             error_exit "Ruta de staging no autorizada: ${REAL_STAGING}" 28
         fi
 
-        # Validar línea por línea que solo contenga comentarios o directivas 'deny <ip>;'
-        DENY_REGEX="^deny[[:space:]]+[0-9a-fA-F:\.]+;$"
+        # Validar línea por línea que solo contenga comentarios o directivas 'deny <ip_or_cidr>;'
+        DENY_REGEX="^deny[[:space:]]+[0-9a-fA-F:\.\/]+;$"
         while IFS= read -r line || [ -n "$line" ]; do
             trimmed="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
             if [ -z "$trimmed" ] || [[ "$trimmed" =~ ^# ]]; then

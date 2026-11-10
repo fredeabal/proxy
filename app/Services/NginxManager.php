@@ -298,7 +298,7 @@ class NginxManager
         $seen = [];
         foreach ($activeBans as $ban) {
             $ip = trim((string) ($ban['ip_address'] ?? ''));
-            if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP) !== false && ! isset($seen[$ip])) {
+            if ($ip !== '' && \App\Models\BannedIpModel::isValidIpOrCidr($ip) && ! isset($seen[$ip])) {
                 $seen[$ip] = true;
                 $lines[] = "deny {$ip};";
             }

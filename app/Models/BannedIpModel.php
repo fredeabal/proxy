@@ -30,7 +30,91 @@ class BannedIpModel extends Model
     protected $updatedField  = 'updated_at';
 
     /**
-     * Comprueba si una dirección IP está actualmente bloqueada.
+     * Valida si una cadena es una dirección IP individual (IPv4/IPv6) o un rango CIDR válido (ej. 203.0.113.0/24).
+     */
+    public static function isValidIpOrCidr(string $target): bool
+    {
+        $target = trim($target);
+        if ($target === '') {
+            return false;
+        }
+
+        if (filter_var($target, FILTER_VALIDATE_IP) !== false) {
+            return true;
+        }
+
+        if (! str_contains($target, '/')) {
+            return false;
+        }
+
+        [$subnet, $prefix] = explode('/', $target, 2);
+        if (! ctype_digit($prefix)) {
+            return false;
+        }
+
+        $prefixInt = (int) $prefix;
+        if (filter_var($subnet, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+            return $prefixInt >= 8 && $prefixInt <= 32;
+        }
+
+        if (filter_var($subnet, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+            return $prefixInt >= 16 && $prefixInt <= 128;
+        }
+
+        return false;
+    }
+
+    /**
+     * Comprueba si una dirección IP individual coincide con una IP exacta o pertenece a un rango CIDR.
+     */
+    public static function ipMatchesTarget(string $ip, string $target): bool
+    {
+        $ip     = trim($ip);
+        $target = trim($target);
+
+        if ($ip === $target) {
+            return true;
+        }
+
+        if (! str_contains($target, '/')) {
+            return false;
+        }
+
+        [$subnet, $prefix] = explode('/', $target, 2);
+        $ipBin     = @inet_pton($ip);
+        $subnetBin = @inet_pton($subnet);
+
+        if ($ipBin === false || $subnetBin === false || strlen($ipBin) !== strlen($subnetBin)) {
+            return false;
+        }
+
+        $prefixLen = (int) $prefix;
+        $maxBits   = strlen($ipBin) * 8;
+        if ($prefixLen < 0 || $prefixLen > $maxBits) {
+            return false;
+        }
+
+        $fullBytes = intdiv($prefixLen, 8);
+        $remBits   = $prefixLen % 8;
+
+        if ($fullBytes > 0) {
+            if (substr($ipBin, 0, $fullBytes) !== substr($subnetBin, 0, $fullBytes)) {
+                return false;
+            }
+        }
+
+        if ($remBits > 0) {
+            $mask = (0xFF << (8 - $remBits)) & 0xFF;
+            if ((ord($ipBin[$fullBytes]) & $mask) !== (ord($subnetBin[$fullBytes]) & $mask)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Comprueba si una dirección IP está actualmente bloqueada (por IP exacta o por rango CIDR).
      * Limpia automáticamente el bloqueo si ya expiró.
      */
     public function isBanned(string $ip): ?array
@@ -46,25 +130,43 @@ class BannedIpModel extends Model
             return null;
         }
 
-        if (! $row) {
-            return null;
-        }
-
-        if ((int) $row['is_permanent'] === 1) {
-            return $row;
-        }
-
-        if (! empty($row['expires_at'])) {
-            if (strtotime((string) $row['expires_at']) > time()) {
+        if ($row) {
+            if ((int) $row['is_permanent'] === 1) {
                 return $row;
             }
 
-            // El baneo temporal ha expirado: eliminar registro
-            $this->delete((int) $row['id']);
+            if (! empty($row['expires_at'])) {
+                if (strtotime((string) $row['expires_at']) > time()) {
+                    return $row;
+                }
+
+                // El baneo temporal ha expirado: eliminar registro
+                $this->delete((int) $row['id']);
+            }
+        }
+
+        // Comprobar si la IP pertenece a algún rango CIDR activo bloqueado
+        try {
+            $cidrRows = $this->like('ip_address', '/', 'both')->findAll();
+            foreach ($cidrRows as $cidrRow) {
+                $isActive = ((int) $cidrRow['is_permanent'] === 1)
+                    || (! empty($cidrRow['expires_at']) && strtotime((string) $cidrRow['expires_at']) > time());
+
+                if (! $isActive) {
+                    if (! empty($cidrRow['expires_at']) && strtotime((string) $cidrRow['expires_at']) <= time()) {
+                        $this->delete((int) $cidrRow['id']);
+                    }
+                    continue;
+                }
+
+                if (self::ipMatchesTarget($ip, (string) $cidrRow['ip_address'])) {
+                    return $cidrRow;
+                }
+            }
+        } catch (\Throwable $e) {
             return null;
         }
 
-        // Solo tiene intentos acumulados pero aún no ha superado el umbral de bloqueo
         return null;
     }
 
@@ -163,8 +265,8 @@ class BannedIpModel extends Model
     public function banIp(string $ip, string $reason, int $durationMinutes = 0, string $createdBy = 'admin'): array
     {
         $ip = trim($ip);
-        if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
-            throw new InvalidArgumentException("La dirección IP '{$ip}' no es válida.");
+        if (! self::isValidIpOrCidr($ip)) {
+            throw new InvalidArgumentException("La dirección IP o rango CIDR '{$ip}' no es válido.");
         }
 
         $reason = trim($reason) !== '' ? trim($reason) : 'Bloqueo manual por administrador';

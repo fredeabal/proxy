@@ -432,18 +432,22 @@ class AdminController extends BaseController
         $reason   = trim((string) $this->request->getPost('reason'));
         $duration = (int) ($this->request->getPost('duration') ?? 0);
 
-        if ($ip === '' || filter_var($ip, FILTER_VALIDATE_IP) === false) {
+        if ($ip === '' || ! BannedIpModel::isValidIpOrCidr($ip)) {
             return redirect()->to(base_url('admin?tab=bans'))
                 ->withInput()
-                ->with('error', 'Por favor introduce una dirección IPv4 o IPv6 válida.');
+                ->with('error', 'Por favor introduce una dirección IP (IPv4/IPv6) o un rango CIDR válido (ej. 203.0.113.0/24).');
         }
 
-        // Prevenir que el administrador se bloquee a sí mismo o a loopback local
+        // Prevenir que el administrador se bloquee a sí mismo o a loopback local (incluyendo dentro de un rango CIDR)
         $myIp = $this->request->getIPAddress();
-        if ($ip === $myIp || in_array($ip, ['127.0.0.1', '::1'], true)) {
+        if (
+            BannedIpModel::ipMatchesTarget($myIp, $ip)
+            || BannedIpModel::ipMatchesTarget('127.0.0.1', $ip)
+            || BannedIpModel::ipMatchesTarget('::1', $ip)
+        ) {
             return redirect()->to(base_url('admin?tab=bans'))
                 ->withInput()
-                ->with('error', "Por seguridad, no puedes bloquear tu propia dirección IP ({$ip}) ni el loopback local.");
+                ->with('error', "Por seguridad, no puedes bloquear tu propia dirección IP ({$myIp}) ni un rango CIDR que la incluya.");
         }
 
         try {

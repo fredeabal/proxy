@@ -126,5 +126,44 @@ final class IpBanSecurityTest extends CIUnitTestCase
         $res->assertSee('198.51.100.77');
         $res->assertSee('CF-Connecting-IP Activo');
     }
+
+    public function testCidrRangeBanBlocksMatchingIpsAndPreventsSelfRangeBan(): void
+    {
+        $cidrRange = '203.0.113.0/24';
+
+        $postData = $this->withCsrf([
+            'ip_address' => $cidrRange,
+            'duration'   => '1440',
+            'reason'     => 'Subred de ataque',
+        ]);
+
+        $res = $this->withSession($this->adminSession)->post('admin/bans/add', $postData);
+        $res->assertRedirectTo(base_url('admin?tab=bans'));
+
+        $banModel = new BannedIpModel();
+        // Una IP dentro del rango /24 debe quedar bloqueada
+        $matchedBan = $banModel->isBanned('203.0.113.45');
+        $this->assertNotNull($matchedBan);
+        $this->assertSame($cidrRange, $matchedBan['ip_address']);
+
+        // Una IP fuera del rango /24 no debe verse afectada
+        $this->assertNull($banModel->isBanned('203.0.114.1'));
+
+        // Comprobar generación de directiva CIDR en Nginx
+        $nginxManager = new NginxManager();
+        $syncResult = $nginxManager->syncBannedIps($banModel->getActiveBans());
+        $this->assertTrue($syncResult['success']);
+        $this->assertStringContainsString("deny {$cidrRange};", $syncResult['content']);
+
+        // Impedir bloquear un rango CIDR que incluya loopback (127.0.0.0/8)
+        $selfRangeData = $this->withCsrf([
+            'ip_address' => '127.0.0.0/8',
+            'duration'   => '0',
+            'reason'     => 'Intento bloquear loopback CIDR',
+        ]);
+        $resLoop = $this->withSession($this->adminSession)->post('admin/bans/add', $selfRangeData);
+        $resLoop->assertRedirectTo(base_url('admin?tab=bans'));
+        $resLoop->assertSessionHas('error');
+    }
 }
 
