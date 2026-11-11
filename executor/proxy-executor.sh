@@ -174,8 +174,8 @@ EOF
         ;;
 
     disable-host)
-        if [ $# -ne 1 ]; then
-            error_exit "Uso: $0 disable-host <host_id>" 9
+        if [ $# -lt 1 ]; then
+            error_exit "Uso: $0 disable-host <host_id> [staging_file]" 9
         fi
 
         HOST_ID="$1"
@@ -183,11 +183,34 @@ EOF
             error_exit "El ID de host debe ser un número entero positivo." 10
         fi
 
+        SRC_FILE="${SITES_AVAILABLE}/${HOST_ID}.conf"
         DST_LINK="${SITES_ENABLED}/${HOST_ID}.conf"
+
+        # Si se suministra un archivo staging, copiarlo de forma segura a sites-available
+        if [ $# -ge 2 ]; then
+            STAGING_FILE="$2"
+            REAL_STAGING="$(realpath -q "${STAGING_FILE}" 2>/dev/null || echo "")"
+            if [ -z "${REAL_STAGING}" ] || [ ! -f "${REAL_STAGING}" ]; then
+                error_exit "Archivo de staging no encontrado o no válido." 7
+            fi
+
+            case "${REAL_STAGING}" in
+                "${STAGING_DIR}"/*|/var/www/*/writable/staging/*|/tmp/*|/var/tmp/*)
+                    ;;
+                *)
+                    error_exit "Ruta no autorizada para archivo staging: ${REAL_STAGING}" 8
+                    ;;
+            esac
+
+            cp "${REAL_STAGING}" "${SRC_FILE}"
+            chmod 644 "${SRC_FILE}"
+        fi
 
         if [ -L "${DST_LINK}" ] || [ -f "${DST_LINK}" ]; then
             rm -f "${DST_LINK}"
         fi
+
+        ensure_confd_defaults
 
         # Validar y recargar
         if ! nginx -t 2>&1; then

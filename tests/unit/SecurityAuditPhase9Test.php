@@ -197,6 +197,18 @@ final class SecurityAuditPhase9Test extends CIUnitTestCase
         $code4 = 0;
         exec(escapeshellarg($executor) . ' cert-info "../../etc/passwd" 2>&1', $out4, $code4);
         $this->assertSame(24, $code4);
+
+        // 5. Inyección de comando en host_id de disable-host
+        $out5 = [];
+        $code5 = 0;
+        exec(escapeshellarg($executor) . ' disable-host "1; id" 2>&1', $out5, $code5);
+        $this->assertSame(10, $code5);
+
+        // 6. Path traversal en staging_file de disable-host
+        $out6 = [];
+        $code6 = 0;
+        exec(escapeshellarg($executor) . ' disable-host 1 "/etc/hosts" 2>&1', $out6, $code6);
+        $this->assertSame(8, $code6);
     }
 
     // =====================================================================
