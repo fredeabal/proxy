@@ -204,7 +204,7 @@
   </div>
 </div>
 
-<!-- Tarjetas Móviles Directas (< 768px - Patrón DeCA) -->
+<!-- Tarjetas Móviles Directas (< 768px) -->
 <div class="d-block d-md-none mt-3" id="backupMobileCards">
   <?php if (!empty($backups)): ?>
     <?php foreach ($backups as $b): ?>

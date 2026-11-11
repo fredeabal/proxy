@@ -113,7 +113,7 @@ class ProfileController extends BaseController
     }
 
     /**
-     * Sube y actualiza el avatar del usuario (Estilo DeCA).
+     * Sube y actualiza el avatar del usuario.
      */
     public function updateAvatar(): RedirectResponse
     {

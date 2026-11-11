@@ -50,7 +50,7 @@
               <i class="ti ti-moon fs-5" id="themeIcon"></i>
             </button>
 
-            <!-- Menú Desplegable de Usuario (Estilo DeCA / Modernize) -->
+            <!-- Menú Desplegable de Usuario -->
             <ul class="navbar-nav flex-row ms-auto align-items-center justify-content-end gap-2">
               <li class="nav-item dropdown">
                 <a class="nav-link pe-0" href="javascript:void(0)" id="dropUser" data-bs-toggle="dropdown" aria-expanded="false">

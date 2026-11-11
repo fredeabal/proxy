@@ -549,7 +549,7 @@ a.badge.bg-danger-subtle:focus {
     border-color: #475569 !important;
 }
 
-/* --- Menú Desplegable (Dropdown) - Tema Claro y Oscuro estilo DeCA --- */
+/* --- Menú Desplegable (Dropdown) - Tema Claro y Oscuro --- */
 [data-bs-theme="light"] .dropdown-menu {
     background-color: #ffffff !important;
     border: 1px solid rgba(0, 0, 0, 0.1) !important;
@@ -1672,7 +1672,7 @@ body.auth-no-scroll {
 
 /* =============================================
    RESPONSIVIDAD Y APROVECHAMIENTO DE BORDES MÓVIL
-   (Estilo Deca: márgenes optimizados en smartphones y tablets)
+   (Márgenes optimizados en smartphones y tablets)
    ============================================= */
 /* =============================================
    RESPONSIVIDAD Y EXPERIENCIA APP NATIVA MÓVIL
@@ -2579,7 +2579,7 @@ a.net-name:hover {
     }
 }
 
-/* Filas de tabla en PC: Clic en toda la línea para editar (estilo interactivo DeCA) */
+/* Filas de tabla en PC: Clic en toda la línea para editar */
 .proxy-row {
     cursor: pointer !important;
     transition: background-color 0.15s ease-in-out;
@@ -2591,7 +2591,7 @@ a.net-name:hover {
     background-color: rgba(0, 0, 0, 0.02) !important;
 }
 
-/* Tarjetas de Lista Móvil (Patrón DeCA / Aprovechamiento de Pantalla) */
+/* Tarjetas de Lista Móvil (Aprovechamiento de Pantalla) */
 .proxy-card-item {
     cursor: pointer !important;
     transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;

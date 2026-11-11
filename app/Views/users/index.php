@@ -1,4 +1,4 @@
-<!-- Cabecera de Página (Estilo DeCA / NetCrew) -->
+<!-- Cabecera de Página -->
 <div class="page-header">
   <div>
     <h4 class="page-header-title">Usuarios</h4>

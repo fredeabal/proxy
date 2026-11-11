@@ -260,7 +260,7 @@
                   </a>
                 </td>
 
-                <!-- Acciones (Menú de 3 puntos estilo DeCA) -->
+                <!-- Acciones (Menú de 3 puntos) -->
                 <td class="text-end pe-3" onclick="event.stopPropagation();">
                   <div class="dropdown dropstart d-inline-block">
                     <a href="javascript:void(0)" 
@@ -325,7 +325,7 @@
   </div>
 </div>
 
-<!-- 2. Vista Móvil: Tarjetas Pegadas al Borde con Lista de Atributos (d-block d-md-none - Patrón DeCA) -->
+<!-- 2. Vista Móvil: Tarjetas Pegadas al Borde con Lista de Atributos (d-block d-md-none) -->
 <div id="proxyCardsContainer" class="d-block d-md-none">
   <!-- Filtros y Búsqueda Móvil -->
   <div class="card border shadow-none mb-2">
@@ -452,7 +452,7 @@
             </div>
           </div>
 
-          <!-- Lista de Detalles Abajo en Líneas Separadas (Estilo DeCA) -->
+          <!-- Lista de Detalles Abajo en Líneas Separadas -->
           <div class="text-muted small mt-2">
             <div>
               <strong>Destino:</strong> 

@@ -34,7 +34,7 @@ $currentLbAlgo = old('lb_algorithm', $proxy['lb_algorithm'] ?? 'round_robin');
 $existingUpstreams = old('upstreams', $upstreams ?? []);
 ?>
 
-<!-- Cabecera de Página (Estilo DeCA / NetCrew) -->
+<!-- Cabecera de Página -->
 <div class="page-header">
   <h4 class="page-header-title"><?= esc($pageTitle) ?></h4>
   <div class="page-header-actions">

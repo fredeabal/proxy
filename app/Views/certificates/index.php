@@ -225,7 +225,7 @@
                   <?php endif; ?>
                 </td>
 
-                <!-- Acciones (Menú de 3 puntos estilo DeCA con dropstart y fixed strategy) -->
+                <!-- Acciones (Menú de 3 puntos con dropstart y fixed strategy) -->
                 <td class="text-end pe-3" onclick="event.stopPropagation();">
                   <div class="dropdown dropstart d-inline-block">
                     <a href="javascript:void(0)" 
@@ -269,7 +269,7 @@
 </div>
 
 <!-- =========================================================================
-     2. VISTA MÓVIL: TARJETAS PEGADAS AL BORDE (d-block d-md-none - Patrón DeCA)
+     2. VISTA MÓVIL: TARJETAS PEGADAS AL BORDE (d-block d-md-none)
      ========================================================================= -->
 <div id="certCardsContainer" class="d-block d-md-none">
   <!-- Filtros y Búsqueda Móvil -->
@@ -380,7 +380,7 @@
             </div>
           </div>
 
-          <!-- Lista de Detalles Abajo en Líneas Separadas (Estilo DeCA) -->
+          <!-- Lista de Detalles Abajo en Líneas Separadas -->
           <div class="text-muted small mt-2">
             <div>
               <strong>Emisor:</strong> 

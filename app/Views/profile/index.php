@@ -1,5 +1,5 @@
 <!-- =========================================================================
-     MI PERFIL DE USUARIO (Estilo DeCA / NetCrew)
+     MI PERFIL DE USUARIO
      ========================================================================= -->
 <?php
   $isAdmin = ($user['role'] === 'admin');
@@ -18,7 +18,7 @@
 
 <div class="card border shadow-none mb-4">
   <div class="card-body p-3 p-md-4">
-    <!-- SECCIÓN: FOTO DE PERFIL / AVATAR (Estilo DeCA) -->
+    <!-- SECCIÓN: FOTO DE PERFIL / AVATAR -->
     <div class="mb-4 pb-3">
       <div class="d-flex align-items-center gap-2 mb-3">
         <div class="round-32 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle flex-shrink-0">

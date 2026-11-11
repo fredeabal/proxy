@@ -54,7 +54,7 @@
     })();
   </script>
 
-  <!-- Notificaciones SweetAlert2 automáticas estilo NetCrew / Deca -->
+  <!-- Notificaciones SweetAlert2 automáticas -->
   <script>
     document.addEventListener("DOMContentLoaded", function() {
       const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';

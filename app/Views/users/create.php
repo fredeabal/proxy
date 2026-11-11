@@ -1,5 +1,5 @@
 <!-- =========================================================================
-     CREAR USUARIO (Estilo DeCA / NetCrew)
+     CREAR USUARIO
      ========================================================================= -->
 <div class="page-header">
   <h4 class="page-header-title">Crear Usuario</h4>
