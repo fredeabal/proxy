@@ -184,18 +184,20 @@
                       <?= esc($item['scheme']) ?>
                     </span>
                     <?php if (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
-                      <div class="d-flex flex-column" style="gap: 1px;">
+                      <div class="d-flex flex-column" style="gap: 2px;">
                         <?php foreach ($item['upstreams'] as $srv): ?>
-                          <span class="font-monospace text-body fw-medium target-item-<?= $item['id'] ?>" 
+                          <span class="d-inline-flex align-items-center font-monospace text-body fw-medium target-item-<?= $item['id'] ?>" 
                                 data-host="<?= esc($srv['server_host']) ?>" 
                                 data-port="<?= esc($srv['server_port']) ?>" 
                                 style="font-size: 0.78rem; line-height: 1.25; transition: color 0.2s;">
+                            <span class="target-dot rounded-circle bg-secondary me-1 flex-shrink-0" style="width: 6.5px; height: 6.5px; opacity: 0.45; transition: all 0.2s;"></span>
                             <?= esc($srv['server_host']) ?>:<?= esc($srv['server_port']) ?>
                           </span>
                         <?php endforeach; ?>
                       </div>
                     <?php else: ?>
-                      <span class="fw-semibold font-monospace single-target-<?= $item['id'] ?>" style="transition: color 0.2s;">
+                      <span class="d-inline-flex align-items-center fw-semibold font-monospace single-target-<?= $item['id'] ?>" style="transition: color 0.2s;">
+                        <span class="target-dot rounded-circle bg-secondary me-1 flex-shrink-0" style="width: 6.5px; height: 6.5px; opacity: 0.45; transition: all 0.2s;"></span>
                         <?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?>
                       </span>
                       <?php if ($isLocalhost): ?>
@@ -455,18 +457,22 @@
             <div>
               <strong>Destino:</strong> 
               <?php if (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
-                <div class="d-inline-flex flex-column align-top ms-1" style="gap: 1px;">
+                <div class="d-inline-flex flex-column align-top ms-1" style="gap: 2px;">
                   <?php foreach ($item['upstreams'] as $srv): ?>
-                    <span class="font-monospace text-body fw-medium target-item-<?= $item['id'] ?>" 
+                    <span class="d-inline-flex align-items-center font-monospace text-body fw-medium target-item-<?= $item['id'] ?>" 
                           data-host="<?= esc($srv['server_host']) ?>" 
                           data-port="<?= esc($srv['server_port']) ?>" 
                           style="font-size: 0.78rem; line-height: 1.25; transition: color 0.2s;">
+                      <span class="target-dot rounded-circle bg-secondary me-1 flex-shrink-0" style="width: 6.5px; height: 6.5px; opacity: 0.45; transition: all 0.2s;"></span>
                       <?= esc($item['scheme']) ?>://<?= esc($srv['server_host']) ?>:<?= esc($srv['server_port']) ?>
                     </span>
                   <?php endforeach; ?>
                 </div>
               <?php else: ?>
-                <span class="font-monospace text-body single-target-<?= $item['id'] ?>" style="transition: color 0.2s;"><?= esc($item['scheme']) ?>://<?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?></span>
+                <span class="d-inline-flex align-items-center font-monospace text-body single-target-<?= $item['id'] ?>" style="transition: color 0.2s;">
+                  <span class="target-dot rounded-circle bg-secondary me-1 flex-shrink-0" style="width: 6.5px; height: 6.5px; opacity: 0.45; transition: all 0.2s;"></span>
+                  <?= esc($item['scheme']) ?>://<?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?>
+                </span>
               <?php endif; ?>
             </div>
             <div class="mt-1">
@@ -632,32 +638,49 @@ function applyHealthUI(id, data) {
     el.className = iconClass;
   });
 
-  // Resaltar en rojo los destinos/IPs caídos
+  // Resaltar con punto verde/rojo antes de la IP (texto en color normal)
   if (data.servers && data.servers.length > 0) {
     data.servers.forEach(srv => {
       const targetEls = document.querySelectorAll('.target-item-' + id + '[data-host="' + srv.host + '"][data-port="' + srv.port + '"]');
       targetEls.forEach(el => {
+        const dot = el.querySelector('.target-dot');
+        el.classList.remove('text-danger', 'fw-bold');
         if (srv.is_online) {
-          el.classList.remove('text-danger', 'fw-bold');
-          el.classList.add('text-body');
           el.removeAttribute('title');
+          if (dot) {
+            dot.className = 'target-dot rounded-circle bg-success me-1 flex-shrink-0';
+            dot.style.opacity = '1';
+            dot.setAttribute('title', 'Servidor Operativo');
+          }
         } else {
-          el.classList.remove('text-body');
-          el.classList.add('text-danger', 'fw-bold');
           el.setAttribute('title', 'Servidor KO (Sin respuesta)');
+          if (dot) {
+            dot.className = 'target-dot rounded-circle bg-danger me-1 flex-shrink-0';
+            dot.style.opacity = '1';
+            dot.setAttribute('title', 'Servidor KO (Sin respuesta)');
+          }
         }
       });
     });
   } else {
     const allTargets = document.querySelectorAll('.single-target-' + id + ', .target-item-' + id);
     allTargets.forEach(el => {
+      const dot = el.querySelector('.target-dot');
+      el.classList.remove('text-danger', 'fw-bold');
       if (data.is_online) {
-        el.classList.remove('text-danger', 'fw-bold');
         el.removeAttribute('title');
+        if (dot) {
+          dot.className = 'target-dot rounded-circle bg-success me-1 flex-shrink-0';
+          dot.style.opacity = '1';
+          dot.setAttribute('title', 'Servidor Operativo');
+        }
       } else {
-        el.classList.remove('text-body');
-        el.classList.add('text-danger', 'fw-bold');
         el.setAttribute('title', 'Servidor KO (Sin respuesta)');
+        if (dot) {
+          dot.className = 'target-dot rounded-circle bg-danger me-1 flex-shrink-0';
+          dot.style.opacity = '1';
+          dot.setAttribute('title', 'Servidor KO (Sin respuesta)');
+        }
       }
     });
   }
