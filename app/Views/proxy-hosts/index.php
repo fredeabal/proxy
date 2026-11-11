@@ -180,9 +180,6 @@
                 <!-- Destino -->
                 <td>
                   <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-secondary-subtle text-secondary font-monospace text-uppercase align-self-center">
-                      <?= esc($item['scheme']) ?>
-                    </span>
                     <?php if (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
                       <div class="d-flex flex-column" style="gap: 2px;">
                         <?php foreach ($item['upstreams'] as $srv): ?>
@@ -191,14 +188,14 @@
                                 data-port="<?= esc($srv['server_port']) ?>" 
                                 style="font-size: 0.78rem; line-height: 1.25; transition: color 0.2s;">
                             <span class="target-dot rounded-circle bg-secondary me-1 flex-shrink-0" style="width: 6.5px; height: 6.5px; opacity: 0.45; transition: all 0.2s;"></span>
-                            <?= esc($srv['server_host']) ?>:<?= esc($srv['server_port']) ?>
+                            <?= esc($item['scheme']) ?>://<?= esc($srv['server_host']) ?>:<?= esc($srv['server_port']) ?>
                           </span>
                         <?php endforeach; ?>
                       </div>
                     <?php else: ?>
                       <span class="d-inline-flex align-items-center fw-semibold font-monospace single-target-<?= $item['id'] ?>" style="transition: color 0.2s;">
                         <span class="target-dot rounded-circle bg-secondary me-1 flex-shrink-0" style="width: 6.5px; height: 6.5px; opacity: 0.45; transition: all 0.2s;"></span>
-                        <?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?>
+                        <?= esc($item['scheme']) ?>://<?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?>
                       </span>
                       <?php if ($isLocalhost): ?>
                         <span class="badge bg-secondary-subtle text-secondary border border-secondary fs-1" title="Destino local en el mismo host">local</span>
