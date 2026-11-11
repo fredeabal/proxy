@@ -84,6 +84,9 @@ class NginxManager
             ];
         }
 
+        // 0. Asegurar que la configuración base de GeoIP exista para evitar error de variable $geoip_blocked
+        $this->ensureGeoIpConfig();
+
         // 1. Generar o tomar configuración
         if (!empty($proxy['custom_vhost'])) {
             $configContent = trim((string) $proxy['custom_vhost']);
@@ -416,6 +419,18 @@ class NginxManager
             'error'   => $execResult['error'],
             'output'  => $execResult['output'],
         ];
+    }
+
+    /**
+     * Garantiza que el archivo de configuración base de GeoIP exista en Nginx.
+     * Si no existe, genera la configuración por defecto passthrough para que
+     * la directiva $geoip_blocked sea reconocida por Nginx sin errores de sintaxis.
+     */
+    public function ensureGeoIpConfig(): void
+    {
+        if (!file_exists($this->config->geoipConfigFile)) {
+            $this->syncGeoIp(false);
+        }
     }
 
     /**

@@ -29,6 +29,26 @@ error_exit() {
     exit "${2:-1}"
 }
 
+# Asegurar que existan los archivos mínimos en conf.d para que Nginx siempre valide variables globales ($geoip_blocked)
+ensure_confd_defaults() {
+    if [ -d /etc/nginx ] && [ -w /etc/nginx ]; then
+        mkdir -p /etc/nginx/conf.d 2>/dev/null || true
+    fi
+    if [ -d /etc/nginx/conf.d ] && [ -w /etc/nginx/conf.d ]; then
+        if [ ! -f /etc/nginx/conf.d/proxy_manager_geoip.conf ]; then
+            cat << 'EOF' > /etc/nginx/conf.d/proxy_manager_geoip.conf
+# ==============================================================================
+# Reverse Proxy Manager - Configuración GeoIP2 por defecto (Desactivado)
+# ==============================================================================
+map $remote_addr $geoip_blocked {
+    default 0;
+}
+EOF
+            chmod 0644 /etc/nginx/conf.d/proxy_manager_geoip.conf 2>/dev/null || true
+        fi
+    fi
+}
+
 # Validación básica de número de argumentos
 if [ $# -lt 1 ]; then
     error_exit "Uso: $0 <action> [argumentos...]" 2
@@ -39,6 +59,7 @@ shift
 
 case "${ACTION}" in
     validate-config)
+        ensure_confd_defaults
         # Valida un archivo temporal o la configuración general de Nginx
         if [ $# -lt 1 ]; then
             # Sin archivo específico, valida la configuración global activa
@@ -106,6 +127,8 @@ EOF
         if ! [[ "${HOST_ID}" =~ ^[0-9]+$ ]]; then
             error_exit "El ID de host debe ser un número entero positivo." 6
         fi
+
+        ensure_confd_defaults
 
         SRC_FILE="${SITES_AVAILABLE}/${HOST_ID}.conf"
         DST_LINK="${SITES_ENABLED}/${HOST_ID}.conf"
@@ -200,6 +223,7 @@ EOF
         ;;
 
     reload-nginx)
+        ensure_confd_defaults
         if ! nginx -t 2>&1; then
             error_exit "No se puede recargar Nginx: la configuración actual tiene errores de sintaxis." 14
         fi
