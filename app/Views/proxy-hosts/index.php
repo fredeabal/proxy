@@ -159,14 +159,14 @@
                       <i class="ti ti-world fs-4 health-icon-<?= $item['id'] ?>"></i>
                     </button>
                     <div>
-                      <div class="fw-bold text-dark fs-3 d-flex align-items-center gap-1">
+                      <div class="fw-semibold d-flex align-items-center gap-1" style="font-size: 0.78rem; line-height: 1.25;">
                         <?= esc($item['domain']) ?>
                         <a href="<?= esc($item['scheme']) ?>://<?= esc($item['domain']) ?>" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" class="text-muted text-hover-primary" title="Abrir en nueva pestaña">
-                          <i class="ti ti-external-link fs-2"></i>
+                          <i class="ti ti-external-link" style="font-size: 0.85rem;"></i>
                         </a>
                       </div>
                       <?php if (!empty($aliases)): ?>
-                        <div class="text-muted font-monospace mt-1 d-flex align-items-center gap-1" style="font-size: 0.8rem;" title="<?= esc(implode(', ', $aliases)) ?>">
+                        <div class="text-muted font-monospace mt-1 d-flex align-items-center gap-1" style="font-size: 0.75rem;" title="<?= esc(implode(', ', $aliases)) ?>">
                           <i class="ti ti-corner-down-right"></i>
                           <span class="text-truncate" style="max-width: 320px;">
                             <?= esc(implode(', ', array_slice($aliases, 0, 2))) ?><?php if (count($aliases) > 2): ?> <span class="opacity-75">+<?= count($aliases) - 2 ?></span><?php endif; ?>
@@ -380,14 +380,14 @@
               </button>
               <div class="overflow-hidden">
                 <div class="d-flex align-items-center gap-1 text-truncate">
-                  <h6 class="fw-bold mb-0 text-body fs-4 text-truncate"><?= esc($item['domain']) ?></h6>
+                  <span class="fw-semibold mb-0 text-truncate" style="font-size: 0.78rem; line-height: 1.25;"><?= esc($item['domain']) ?></span>
                   <a href="<?= esc($item['scheme']) ?>://<?= esc($item['domain']) ?>" 
                      target="_blank" 
                      rel="noopener noreferrer" 
                      onclick="event.stopPropagation();" 
                      class="text-muted p-1 flex-shrink-0" 
                      title="Abrir en nueva pestaña">
-                    <i class="ti ti-external-link fs-2"></i>
+                    <i class="ti ti-external-link" style="font-size: 0.85rem;"></i>
                   </a>
                 </div>
                 <?php if (!empty($aliases)): ?>
