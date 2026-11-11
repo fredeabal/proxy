@@ -84,6 +84,7 @@ class ProxyHostController extends BaseController
             'activeCount'  => $activeCount,
             'sslCount'     => $sslCount,
             'wsCount'      => $wsCount,
+            'extraScripts' => ['assets/js/proxy-hosts.js'],
         ];
 
         return view('template/header', $data)
