@@ -72,7 +72,7 @@ $totpQrCode = $totpQrCode ?? '';
             role="tab"
             aria-controls="tab-bans"
             aria-selected="<?= $currentTab === 'bans' ? 'true' : 'false' ?>">
-      <i class="ti ti-ban me-1"></i> IPs Bloqueadas
+      <i class="ti ti-shield-lock me-1"></i> Bloqueos e IPs
     </button>
   </li>
   <li class="nav-item" role="presentation">
@@ -270,6 +270,16 @@ $totpQrCode = $totpQrCode ?? '';
           if (matches) visible++;
         });
         if (banNoRow) banNoRow.classList.toggle('d-none', visible > 0);
+      });
+    }
+
+    // 6. Inicialización de select2 para selector de países GeoIP
+    const geoipSelect = document.getElementById('geoip_countries');
+    if (geoipSelect && window.jQuery && typeof window.jQuery.fn.select2 === 'function') {
+      window.jQuery(geoipSelect).select2({
+        width: '100%',
+        placeholder: 'Busca y selecciona uno o varios países...',
+        allowClear: true
       });
     }
   });

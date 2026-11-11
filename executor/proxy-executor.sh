@@ -357,6 +357,74 @@ EOF
         exit 0
         ;;
 
+    sync-geoip)
+        if [ $# -ne 1 ]; then
+            error_exit "Uso: $0 sync-geoip <staging_file>" 31
+        fi
+
+        STAGING_FILE="$1"
+        if [ ! -f "${STAGING_FILE}" ]; then
+            error_exit "Archivo de staging de GeoIP no encontrado: ${STAGING_FILE}" 32
+        fi
+
+        REAL_STAGING="$(realpath -q "${STAGING_FILE}" 2>/dev/null || echo "")"
+        if [[ -z "${REAL_STAGING}" ]]; then
+            error_exit "No se pudo resolver la ruta del archivo GeoIP." 33
+        fi
+
+        if [[ "${REAL_STAGING}" != "${STAGING_DIR}/"* ]] && [[ "${REAL_STAGING}" != /var/www/*/writable/staging/* ]] && [[ "${REAL_STAGING}" != /tmp/* ]] && [[ "${REAL_STAGING}" != /var/tmp/* ]]; then
+            error_exit "Ruta de staging no autorizada: ${REAL_STAGING}" 34
+        fi
+
+        mkdir -p /etc/nginx/conf.d
+        DEST_GEOIP="/etc/nginx/conf.d/proxy_manager_geoip.conf"
+        cp -f "${REAL_STAGING}" "${DEST_GEOIP}"
+        chmod 0644 "${DEST_GEOIP}"
+
+        if ! nginx -t 2>&1; then
+            rm -f "${DEST_GEOIP}"
+            error_exit "Error de sintaxis Nginx al aplicar configuración GeoIP." 35
+        fi
+
+        systemctl reload nginx 2>&1 || true
+        echo "OK: Configuración GeoIP sincronizada en Nginx."
+        exit 0
+        ;;
+
+    update-geoip-db)
+        # Descarga la base de datos libre MaxMind GeoLite2-Country desde mirror público
+        GEOIP_DIR="/usr/share/GeoIP"
+        GEOIP_DEST="${GEOIP_DIR}/GeoLite2-Country.mmdb"
+        GEOIP_TMP="/tmp/GeoLite2-Country.mmdb.$$"
+        GEOIP_URL="https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/GeoLite2-Country.mmdb"
+
+        mkdir -p "${GEOIP_DIR}"
+
+        echo "Descargando base de datos GeoLite2-Country..."
+        if ! curl -fsSL --retry 3 --connect-timeout 10 -o "${GEOIP_TMP}" "${GEOIP_URL}"; then
+            rm -f "${GEOIP_TMP}"
+            error_exit "Error al descargar la base de datos GeoIP2 desde el mirror público." 36
+        fi
+
+        # Comprobar que el archivo descargado no esté vacío y tenga tamaño mínimo (~3MB)
+        FILE_SIZE=$(wc -c < "${GEOIP_TMP}" 2>/dev/null || echo 0)
+        if [ "${FILE_SIZE}" -lt 1000000 ]; then
+            rm -f "${GEOIP_TMP}"
+            error_exit "El archivo descargado parece incompleto o corrupto (${FILE_SIZE} bytes)." 37
+        fi
+
+        mv -f "${GEOIP_TMP}" "${GEOIP_DEST}"
+        chmod 0644 "${GEOIP_DEST}"
+
+        # Si Nginx está activo, recargar para que refresque el descriptor
+        if nginx -t 2>&1; then
+            systemctl reload nginx 2>&1 || true
+        fi
+
+        echo "OK: Base de datos GeoLite2-Country actualizada correctamente."
+        exit 0
+        ;;
+
     *)
         error_exit "Acción no reconocida: ${ACTION}" 15
         ;;

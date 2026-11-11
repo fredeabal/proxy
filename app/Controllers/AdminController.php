@@ -106,6 +106,17 @@ class AdminController extends BaseController
         $activeMenu = 'admin';
         $bannedIps  = $this->banModel->getActiveBans();
 
+        // 7. Configuración GeoIP2 (MaxMind GeoLite2)
+        $geoipEnabled   = (string) $this->settingModel->getVal('geoip_enabled', '0') === '1';
+        $geoipMode      = (string) $this->settingModel->getVal('geoip_mode', 'blocklist');
+        $geoipCountriesRaw = (string) $this->settingModel->getVal('geoip_countries', '');
+        $geoipCountries = $geoipCountriesRaw !== '' ? json_decode($geoipCountriesRaw, true) : [];
+        if (!is_array($geoipCountries)) {
+            $geoipCountries = [];
+        }
+        $nginxCfg = config('Nginx');
+        $geoipDbExists = is_file($nginxCfg->geoipDatabasePath);
+
         $data = [
             'title'            => 'Administración',
             'activeMenu'       => $activeMenu,
@@ -122,6 +133,11 @@ class AdminController extends BaseController
             'totalSizeHuman'   => $this->backupManager->formatBytes((int) $totalSize),
             'auditLogs'        => $auditLogs,
             'bannedIps'        => $bannedIps,
+            'geoipEnabled'     => $geoipEnabled,
+            'geoipMode'        => $geoipMode,
+            'geoipCountries'   => $geoipCountries,
+            'geoipDbExists'    => $geoipDbExists,
+            'geoipDbPath'      => $nginxCfg->geoipDatabasePath,
             'currentVisitorIp' => $this->request->getIPAddress(),
             'nginxStatus'      => $monitor->getNginxStatus(),
             'cpuLoad'          => $monitor->getCpuLoad(),
@@ -489,6 +505,72 @@ class AdminController extends BaseController
 
         return redirect()->to(base_url('admin?tab=bans'))
             ->with('success', "La dirección IP {$ip} ha sido desbloqueada con éxito.");
+    }
+
+    /**
+     * Guarda la configuración de Bloqueo por País (GeoIP2) y sincroniza con Nginx.
+     */
+    public function updateGeoIp(): ResponseInterface
+    {
+        $enabled = $this->request->getPost('geoip_enabled') === '1';
+        $mode = $this->request->getPost('geoip_mode') === 'allowlist' ? 'allowlist' : 'blocklist';
+        $rawCountries = $this->request->getPost('geoip_countries');
+        $countries = [];
+
+        if (is_array($rawCountries)) {
+            foreach ($rawCountries as $c) {
+                $code = strtoupper(trim((string) $c));
+                if (preg_match('/^[A-Z]{2}$/', $code)) {
+                    $countries[] = $code;
+                }
+            }
+        }
+        $countries = array_values(array_unique($countries));
+
+        // Guardar configuración en Base de Datos
+        $this->settingModel->setVal('geoip_enabled', $enabled ? '1' : '0');
+        $this->settingModel->setVal('geoip_mode', $mode);
+        $this->settingModel->setVal('geoip_countries', json_encode($countries));
+
+        // Sincronizar archivo de configuración en Nginx
+        $nginxManager = new NginxManager();
+        $syncResult = $nginxManager->syncGeoIp($enabled, $mode, $countries);
+
+        $modeLabel = $mode === 'allowlist' ? 'Lista Blanca (Allowlist)' : 'Lista Negra (Blocklist)';
+        $statusLabel = $enabled ? 'activado' : 'desactivado';
+        $countryCount = count($countries);
+
+        AuditLogModel::log(
+            'geoip_updated',
+            "GeoIP2 {$statusLabel}. Modo: {$modeLabel}. Países configurados: {$countryCount}"
+        );
+
+        if (!$syncResult['success']) {
+            return redirect()->to(base_url('admin?tab=bans'))
+                ->with('warning', 'Configuración guardada en BD, pero hubo un aviso al recargar Nginx: ' . ($syncResult['error'] ?? ''));
+        }
+
+        return redirect()->to(base_url('admin?tab=bans'))
+            ->with('success', "Configuración de GeoIP2 actualizada correctamente ({$statusLabel}).");
+    }
+
+    /**
+     * Descarga o actualiza la base de datos libre GeoLite2-Country sin requerir License Keys.
+     */
+    public function downloadGeoIpDb(): ResponseInterface
+    {
+        $nginxManager = new NginxManager();
+        $result = $nginxManager->downloadGeoIpDatabase();
+
+        if (!$result['success']) {
+            return redirect()->to(base_url('admin?tab=bans'))
+                ->with('error', 'Error al descargar la base de datos GeoIP: ' . ($result['error'] ?? 'desconocido'));
+        }
+
+        AuditLogModel::log('geoip_db_updated', 'Base de datos GeoLite2-Country descargada/actualizada con éxito');
+
+        return redirect()->to(base_url('admin?tab=bans'))
+            ->with('success', 'Base de datos MaxMind GeoLite2 descargada y lista para su uso.');
     }
 }
 

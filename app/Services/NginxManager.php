@@ -322,6 +322,103 @@ class NginxManager
     }
 
     /**
+     * Sincroniza la configuración global de GeoIP2 en Nginx.
+     *
+     * @param bool   $enabled  Si el filtrado por país está habilitado
+     * @param string $mode     'blocklist' (bloquear países) o 'allowlist' (permitir solo países)
+     * @param array  $countries Lista de códigos ISO-2 en mayúsculas (ej: ['RU', 'CN'])
+     * @return array{success: bool, error: ?string, output: ?string, content: string}
+     */
+    public function syncGeoIp(bool $enabled, string $mode = 'blocklist', array $countries = []): array
+    {
+        $dbPath = $this->config->geoipDatabasePath;
+        $lines = [
+            '# ==============================================================================',
+            '# Reverse Proxy Manager - Configuración GeoIP2 (MaxMind GeoLite2-Country)',
+            '# Generado automáticamente - NO EDITAR MANUALMENTE',
+            '# Fecha: ' . date('Y-m-d H:i:s'),
+            '# ==============================================================================',
+        ];
+
+        // Limpiar y validar códigos de país
+        $validCodes = [];
+        foreach ($countries as $c) {
+            $code = strtoupper(trim((string) $c));
+            if (preg_match('/^[A-Z]{2}$/', $code)) {
+                $validCodes[$code] = true;
+            }
+        }
+        $validList = array_keys($validCodes);
+        sort($validList);
+
+        if (!$enabled) {
+            // Cuando está desactivado, creamos un map passthrough que nunca bloquea
+            $lines[] = '# GeoIP2 Desactivado: $geoip_blocked siempre será 0';
+            $lines[] = 'map $remote_addr $geoip_blocked {';
+            $lines[] = '    default 0;';
+            $lines[] = '}';
+        } else {
+            $lines[] = "# Base de datos MaxMind GeoLite2";
+            $lines[] = "geoip2 {$dbPath} {";
+            $lines[] = '    auto_reload 60m;';
+            $lines[] = '    $geoip2_data_country_code default=XX source=$remote_addr country iso_code;';
+            $lines[] = '}';
+            $lines[] = '';
+
+            if ($mode === 'allowlist') {
+                // Permitir SOLO los países seleccionados (el resto se bloquea con 1)
+                $lines[] = '# Modo Lista Blanca (Allowlist): Solo los países listados tienen valor 0 (permitidos)';
+                $lines[] = 'map $geoip2_data_country_code $geoip_blocked {';
+                $lines[] = '    default 1;';
+                foreach ($validList as $code) {
+                    $lines[] = "    {$code} 0;";
+                }
+                $lines[] = '}';
+            } else {
+                // Modo Lista Negra (Blocklist): Por defecto 0 (permitido), países seleccionados 1 (bloqueados)
+                $lines[] = '# Modo Lista Negra (Blocklist): Los países listados se bloquean con valor 1';
+                $lines[] = 'map $geoip2_data_country_code $geoip_blocked {';
+                $lines[] = '    default 0;';
+                foreach ($validList as $code) {
+                    $lines[] = "    {$code} 1;";
+                }
+                $lines[] = '}';
+            }
+        }
+
+        $lines[] = '';
+        $content = implode("\n", $lines);
+
+        $tempFile = rtrim($this->config->stagingPath, '/') . '/geoip.conf';
+        @file_put_contents($tempFile, $content);
+
+        $destFile = $this->config->geoipConfigFile;
+        $execResult = $this->callExecutor('sync-geoip', [$tempFile], $tempFile, $destFile, false);
+
+        return [
+            'success' => $execResult['success'],
+            'error'   => $execResult['error'],
+            'output'  => $execResult['output'],
+            'content' => $content,
+        ];
+    }
+
+    /**
+     * Descarga o actualiza la base de datos GeoLite2-Country desde mirror público sin keys.
+     *
+     * @return array{success: bool, error: ?string, output: ?string}
+     */
+    public function downloadGeoIpDatabase(): array
+    {
+        $execResult = $this->callExecutor('update-geoip-db', [], null, null, false);
+        return [
+            'success' => $execResult['success'],
+            'error'   => $execResult['error'],
+            'output'  => $execResult['output'],
+        ];
+    }
+
+    /**
      * Invoca el ejecutor privilegiado con control de fallos y modo desarrollo simulado.
      */
     protected function callExecutor(

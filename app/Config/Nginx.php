@@ -42,6 +42,16 @@ class Nginx extends BaseConfig
     public string $bannedIpsFile = '/etc/nginx/conf.d/proxy_manager_banned_ips.conf';
 
     /**
+     * Archivo de bloqueo geográfico (GeoIP2) para Nginx.
+     */
+    public string $geoipConfigFile = '/etc/nginx/conf.d/proxy_manager_geoip.conf';
+
+    /**
+     * Ruta a la base de datos GeoLite2-Country de MaxMind en el servidor.
+     */
+    public string $geoipDatabasePath = '/usr/share/GeoIP/GeoLite2-Country.mmdb';
+
+    /**
      * Si está activado, en entornos donde no existe el ejecutor (ej. macOS/desarrollo local)
      * se simula la ejecución exitosa de forma segura sin romper la aplicación.
      */

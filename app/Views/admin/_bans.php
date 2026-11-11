@@ -1,17 +1,25 @@
 <?php
 /**
- * Pestaña "IPs Bloqueadas" de Administración:
+ * Pestaña "Bloqueos e IPs" de Administración:
  *  - Métricas rápidas de bloqueos (Total, Auto-Ban, Temporales, Permanentes)
+ *  - Bloqueo Geográfico por País (GeoIP2 / MaxMind GeoLite2)
  *  - Formulario de bloqueo manual (IP o rango CIDR)
  *  - Lista negra activa con tabla responsive y tarjetas móviles
  *
- * Variables: $bannedIps
+ * Variables: $bannedIps, $geoipEnabled, $geoipMode, $geoipCountries, $geoipDbExists, $geoipDbPath
  */
+use App\Helpers\GeoIpHelper;
+
 $bannedList = $bannedIps ?? [];
 $totalBanned = count($bannedList);
 $autoBannedCount = count(array_filter($bannedList, static fn($b) => ($b['created_by'] ?? '') === 'system'));
 $permBannedCount = count(array_filter($bannedList, static fn($b) => (int) ($b['is_permanent'] ?? 0) === 1));
 $tempBannedCount = max(0, $totalBanned - $permBannedCount);
+
+$allCountries = GeoIpHelper::getCountryList();
+$selectedCountries = $geoipCountries ?? [];
+$isGeoipActive = !empty($geoipEnabled);
+$currentGeoipMode = $geoipMode ?? 'blocklist';
 ?>
 <!-- Tarjetas Resumen de Métricas Rápidas (Mobile-First: metrics-summary-row) -->
 <div class="row g-2 g-md-3 mb-3 mb-md-4 metrics-summary-row">
@@ -69,6 +77,102 @@ $tempBannedCount = max(0, $totalBanned - $permBannedCount);
   </div>
 </div>
 
+<!-- Bloqueo Geográfico por País (GeoIP2) -->
+<div class="card border shadow-none mb-4">
+  <div class="card-header bg-transparent border-bottom py-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-2">
+      <div class="round-32 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle flex-shrink-0">
+        <i class="ti ti-map-pin fs-5"></i>
+      </div>
+      <h5 class="card-title fw-semibold mb-0">Bloqueo por País (GeoIP2)</h5>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <form method="post" action="<?= base_url('admin/bans/geoip-download') ?>" class="d-inline">
+        <?= csrf_field() ?>
+        <button type="submit"
+                class="btn btn-primary btn-sm px-2 py-1 d-inline-flex align-items-center justify-content-center"
+                title="Actualizar base de datos MaxMind GeoLite2"
+                aria-label="Actualizar base de datos MaxMind GeoLite2">
+          <i class="ti ti-refresh fs-5"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+  <div class="card-body p-3 p-md-4">
+    <form method="post" action="<?= base_url('admin/bans/geoip') ?>">
+      <?= csrf_field() ?>
+      <div class="row g-3 align-items-end">
+        <!-- Estado (Select2) -->
+        <div class="col-12 col-md-3">
+          <label for="geoip_enabled" class="form-label fw-semibold">Estado</label>
+          <div class="input-group flex-nowrap">
+            <span class="input-group-text bg-light"><i class="ti ti-power"></i></span>
+            <div class="flex-grow-1 select2-unified-wrapper">
+              <select id="geoip_enabled" name="geoip_enabled" class="select2 form-control">
+                <option value="0" <?= !$isGeoipActive ? 'selected' : '' ?>>Desactivado</option>
+                <option value="1" <?= $isGeoipActive ? 'selected' : '' ?>>Activado</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modo de Operación: Lista Negra vs Lista Blanca -->
+        <div class="col-12 col-md-3">
+          <label for="geoip_mode" class="form-label fw-semibold">Modo de Operación</label>
+          <div class="input-group flex-nowrap">
+            <span class="input-group-text bg-light"><i class="ti ti-adjustments-horizontal"></i></span>
+            <div class="flex-grow-1 select2-unified-wrapper">
+              <select id="geoip_mode" name="geoip_mode" class="select2 form-control">
+                <option value="blocklist" <?= $currentGeoipMode === 'blocklist' ? 'selected' : '' ?>>
+                  Lista Negra
+                </option>
+                <option value="allowlist" <?= $currentGeoipMode === 'allowlist' ? 'selected' : '' ?>>
+                  Lista Blanca
+                </option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Selector Múltiple de Países + Botón Guardar Icono Primary -->
+        <div class="col-12 col-md-6">
+          <label for="geoip_countries" class="form-label fw-semibold">
+            Países
+            <span class="text-muted fw-normal small">(<?= count($selectedCountries) ?> seleccionados)</span>
+          </label>
+          <div class="d-flex align-items-stretch gap-2">
+            <div class="input-group flex-grow-1 flex-nowrap">
+              <span class="input-group-text bg-light"><i class="ti ti-world"></i></span>
+              <div class="flex-grow-1 select2-unified-wrapper">
+                <select id="geoip_countries"
+                        name="geoip_countries[]"
+                        class="form-control select2"
+                        multiple="multiple"
+                        data-placeholder="Seleccionar países...">
+                  <?php foreach ($allCountries as $code => $country): ?>
+                    <option value="<?= esc($code) ?>" <?= in_array($code, $selectedCountries, true) ? 'selected' : '' ?>>
+                      <?= esc($country['name']) ?> (<?= esc($code) ?>)
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+            </div>
+            <button type="submit"
+                    class="btn btn-primary px-3 d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                    title="Guardar Filtro GeoIP"
+                    aria-label="Guardar Filtro GeoIP">
+              <i class="ti ti-device-floppy fs-5"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="form-text small text-muted mt-2">
+        Inspección por IP con MaxMind GeoLite2. Bloquea o permite países enteros según el modo configurado.
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Formulario para Bloquear una IP o Rango CIDR Manualmente -->
 <div class="card border shadow-none mb-4">
   <div class="card-header bg-transparent border-bottom py-3 d-flex align-items-center gap-2">
@@ -99,16 +203,18 @@ $tempBannedCount = max(0, $totalBanned - $permBannedCount);
         <!-- Duración -->
         <div class="col-12 col-md-3">
           <label for="ban_duration" class="form-label fw-semibold">Duración</label>
-          <div class="input-group">
+          <div class="input-group flex-nowrap">
             <span class="input-group-text bg-light"><i class="ti ti-clock"></i></span>
-            <select id="ban_duration" name="duration" class="form-select">
-              <option value="15">15 minutos</option>
-              <option value="30">30 minutos</option>
-              <option value="60">1 hora</option>
-              <option value="1440">24 horas</option>
-              <option value="10080">7 días</option>
-              <option value="0" selected>Permanente</option>
-            </select>
+            <div class="flex-grow-1 select2-unified-wrapper">
+              <select id="ban_duration" name="duration" class="select2 form-control">
+                <option value="15">15 minutos</option>
+                <option value="30">30 minutos</option>
+                <option value="60">1 hora</option>
+                <option value="1440">24 horas</option>
+                <option value="10080">7 días</option>
+                <option value="0" selected>Permanente</option>
+              </select>
+            </div>
           </div>
         </div>
 

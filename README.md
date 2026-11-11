@@ -27,6 +27,10 @@ Un panel de control web moderno, ágil y seguro para administrar servidores prox
 
 #### A. Protección para tus Hosts (Tus Servicios Backend)
 * **Escudo Bastión:** Los puertos reales y las IPs de tus aplicaciones internas nunca se exponen a Internet.
+* **Bloqueo Geográfico por País (GeoIP2):** Filtrado ultrarrápido con **MaxMind GeoLite2** a nivel de socket en Nginx:
+  * **Modo Lista Negra (Blocklist):** Bloquea el tráfico entrante de países enteros seleccionados.
+  * **Modo Lista Blanca (Allowlist):** Restringe el acceso permitiendo únicamente el tráfico de los países autorizados.
+  * **Actualización en 1 Clic:** Descarga y actualización desatendida de la base de datos `GeoLite2-Country.mmdb` sin claves ni registros desde el panel.
 * **Lista Negra Global de IPs (Fail2ban Interno):** Bloqueo de atacantes a nivel de socket de red (`deny <IP>;` en `/etc/nginx/conf.d/proxy_manager_banned_ips.conf`). Cuando una IP es bloqueada, queda **inhabilitada para acceder a cualquiera de tus sitios o servicios proxy**.
 * **Mitigación DoS y Slowloris:** Buffers activados (`proxy_buffering on;`) y timeouts ajustados para evitar agotamiento de conexiones en los backends.
 * **Cabeceras de Rastreo Confiables:** Sanitización e inyección correcta de `X-Real-IP`, `X-Forwarded-For` y `X-Forwarded-Proto`.

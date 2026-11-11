@@ -59,7 +59,7 @@ PORT=${INPUT_PORT:-81}
 echo -e "\n${YELLOW}⏳ [1/7] Actualizando paquetes e instalando dependencias del sistema...${NC}"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y nginx git unzip curl sqlite3 \
+apt-get install -y nginx libnginx-mod-http-geoip2 geoipupdate git unzip curl sqlite3 \
     certbot python3-certbot-nginx \
     php-fpm php-cli php-sqlite3 php-curl php-intl php-mbstring php-xml php-zip
 
@@ -260,6 +260,14 @@ chmod -R 755 "$INSTALL_DIR"
 chmod 640 "${INSTALL_DIR}/.env" 2>/dev/null || true
 chmod -R 770 "${INSTALL_DIR}/writable"
 chmod 600 "${DB_PATH}" 2>/dev/null || true
+
+# Descargar base de datos GeoLite2-Country sin keys
+mkdir -p /usr/share/GeoIP
+if [ ! -f "/usr/share/GeoIP/GeoLite2-Country.mmdb" ]; then
+    echo -e "${YELLOW}⏳ Descargando base de datos GeoLite2-Country (MaxMind libre)...${NC}"
+    curl -fsSL --retry 3 --connect-timeout 10 -o /usr/share/GeoIP/GeoLite2-Country.mmdb "https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/GeoLite2-Country.mmdb" || true
+    chmod 0644 /usr/share/GeoIP/GeoLite2-Country.mmdb 2>/dev/null || true
+fi
 
 # Comprobar sintaxis y reiniciar servicios
 nginx -t

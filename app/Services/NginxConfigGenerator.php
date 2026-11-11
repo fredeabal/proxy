@@ -204,6 +204,11 @@ class NginxConfigGenerator
 
         $lines = [];
         $lines[] = "{$pad}location / {";
+        $lines[] = "{$padInner}# Control GeoIP2 (si está habilitado globalmente)";
+        $lines[] = "{$padInner}if (\$geoip_blocked = 1) {";
+        $lines[] = "{$padInner}    return 403;";
+        $lines[] = "{$padInner}}";
+        $lines[] = '';
         $lines[] = "{$padInner}client_max_body_size {$maxBodyDirective};";
         $lines[] = "{$padInner}proxy_pass {$scheme}://{$host}:{$port};";
         $lines[] = "{$padInner}proxy_set_header Host \$host;";
