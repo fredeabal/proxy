@@ -241,7 +241,7 @@ $currentGeoipMode = $geoipMode ?? 'blocklist';
         </div>
       </div>
       <div class="form-text small text-muted mt-2">
-        Acepta IPs (<code>203.0.113.50</code>) o rangos CIDR (<code>203.0.113.0/24</code>). Auto-bloqueo de 30 min tras 5 fallos.
+        Acepta IPs (<code>203.0.113.50</code>) o rangos CIDR (<code>203.0.113.0/24</code>).
       </div>
     </form>
   </div>
