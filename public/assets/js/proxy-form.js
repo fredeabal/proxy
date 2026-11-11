@@ -363,6 +363,7 @@
     const fPort      = document.getElementById('forward_port');
     const up0Host    = document.getElementById('upstream_0_host');
     const up0Port    = document.getElementById('upstream_0_port');
+    const form       = document.getElementById('proxyForm');
 
     if (!lbSelect) return;
 
@@ -379,20 +380,42 @@
         if (window.jQuery && $('#lb_algorithm').data('select2')) {
           $('#lb_algorithm').next('.select2-container').css('width', '100%');
         }
-        // Sincronizar automáticamente el servidor 1 con lo que había en destino único si está vacío
+      }
+    }
+
+    function onLbModeChange() {
+      updatePanels();
+      const isLb = lbSelect.value === '1';
+      // Al cambiar manualmente a balanceo de carga, solo si el servidor 1 está completamente vacío
+      // rellenar con lo que el usuario tenía en destino único para agilizar la entrada
+      if (isLb) {
         if (up0Host && !up0Host.value.trim() && fHost && fHost.value.trim()) {
           up0Host.value = fHost.value.trim();
         }
-        if (up0Port && (!up0Port.value || up0Port.value === '80') && fPort && fPort.value) {
-          up0Port.value = fPort.value;
+        if (up0Port && !up0Port.value.trim() && fPort && fPort.value.trim()) {
+          up0Port.value = fPort.value.trim();
         }
       }
     }
 
-    lbSelect.addEventListener('change', updatePanels);
+    lbSelect.addEventListener('change', onLbModeChange);
     if (window.jQuery) {
-      $(lbSelect).on('change', updatePanels);
+      $(lbSelect).on('change', onLbModeChange);
     }
+
+    // Al enviar el formulario, si está en modo balanceo, sincronizar fHost y fPort con el servidor 1
+    if (form) {
+      form.addEventListener('submit', function () {
+        if (lbSelect.value === '1' && up0Host && up0Host.value.trim()) {
+          if (fHost) fHost.value = up0Host.value.trim();
+          if (fPort && up0Port && up0Port.value.trim()) {
+            fPort.value = up0Port.value.trim();
+          }
+        }
+      });
+    }
+
+    // Inicialización al cargar la página (solo muestra/oculta según el estado sin sobreescribir valores de la BD)
     updatePanels();
   }
 })();

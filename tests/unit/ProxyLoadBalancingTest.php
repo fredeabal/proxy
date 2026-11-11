@@ -248,15 +248,17 @@ final class ProxyLoadBalancingTest extends CIUnitTestCase
         $this->assertSame(8080, (int) $upstreams[0]['server_port']);
         $this->assertSame(3, (int) $upstreams[0]['weight']);
 
-        // Actualizar cambiando a round_robin (máximo 2 servidores)
+        // Actualizar cambiando a round_robin (máximo 2 servidores) con puerto 80 en ambos
         $updateData = $this->withCsrf([
             'domain'                 => 'loadbalancer.empresa.com',
             'scheme'                 => 'http',
+            'forward_host'           => '10.10.10.1',
+            'forward_port'           => '8080', // Valor residual que el navegador enviaba
             'load_balancing_enabled' => '1',
             'lb_algorithm'           => 'round_robin',
             'upstreams'              => [
-                0 => ['server_host' => '10.10.10.1', 'server_port' => '8080', 'weight' => '1'],
-                1 => ['server_host' => '10.10.10.2', 'server_port' => '8081', 'weight' => '1', 'role' => 'backup'],
+                0 => ['server_host' => '10.10.10.1', 'server_port' => '80', 'weight' => '1'],
+                1 => ['server_host' => '10.10.10.2', 'server_port' => '80', 'weight' => '1', 'role' => 'backup'],
             ],
             'ssl_certificate'        => 'none',
         ]);
@@ -264,9 +266,13 @@ final class ProxyLoadBalancingTest extends CIUnitTestCase
         $updateResult = $this->withSession($this->adminSession)->post('proxy-hosts/update/' . $savedHost['id'], $updateData);
         $updateResult->assertRedirectTo(base_url('proxy-hosts'));
 
+        $reloadedHost = $hostModel->find((int) $savedHost['id']);
+        $this->assertSame(80, (int) $reloadedHost['forward_port']);
+
         $updatedUpstreams = $upstreamModel->getForProxy((int) $savedHost['id']);
         $this->assertCount(2, $updatedUpstreams);
-        $this->assertSame(8081, (int) $updatedUpstreams[1]['server_port']);
+        $this->assertSame(80, (int) $updatedUpstreams[0]['server_port']);
+        $this->assertSame(80, (int) $updatedUpstreams[1]['server_port']);
         $this->assertSame(1, (int) $updatedUpstreams[1]['is_backup']);
 
         // Eliminar y verificar borrado en cascada

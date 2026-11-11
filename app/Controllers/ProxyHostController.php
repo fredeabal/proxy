@@ -181,9 +181,9 @@ class ProxyHostController extends BaseController
         $forwardHost = trim((string) $this->request->getPost('forward_host'));
         $forwardPort = (int) $this->request->getPost('forward_port');
 
-        if ($isLb && empty($forwardHost) && !empty($parsedUpstreams)) {
+        if ($isLb && !empty($parsedUpstreams)) {
             $forwardHost = $parsedUpstreams[0]['server_host'];
-            $forwardPort = $parsedUpstreams[0]['server_port'];
+            $forwardPort = (int) $parsedUpstreams[0]['server_port'];
         }
 
         $data = [
@@ -367,9 +367,9 @@ class ProxyHostController extends BaseController
         $forwardHost = trim((string) $this->request->getPost('forward_host'));
         $forwardPort = (int) $this->request->getPost('forward_port');
 
-        if ($isLb && empty($forwardHost) && !empty($parsedUpstreams)) {
+        if ($isLb && !empty($parsedUpstreams)) {
             $forwardHost = $parsedUpstreams[0]['server_host'];
-            $forwardPort = $parsedUpstreams[0]['server_port'];
+            $forwardPort = (int) $parsedUpstreams[0]['server_port'];
         }
 
         $data = [
