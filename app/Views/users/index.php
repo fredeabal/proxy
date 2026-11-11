@@ -71,8 +71,8 @@
                   <div class="d-flex align-items-center gap-3">
                     <img src="<?= current_user_avatar($u['avatar'] ?? null) ?>" class="round-36 rounded-circle object-fit-cover border border-primary-subtle flex-shrink-0" width="36" height="36" alt="user" />
                     <div class="text-wrap text-break">
-                      <h6 class="fs-3 fw-semibold mb-0 text-body text-wrap text-break"><?= esc($u['name']) ?></h6>
-                      <span class="text-muted small text-break"><?= esc($u['email']) ?></span>
+                      <div class="fw-semibold mb-0 text-wrap text-break" style="font-size: 0.78rem; line-height: 1.25;"><?= esc($u['name']) ?></div>
+                      <span class="text-muted text-break" style="font-size: 0.75rem;"><?= esc($u['email']) ?></span>
                     </div>
                   </div>
                 </td>
@@ -149,7 +149,7 @@
               <img src="<?= current_user_avatar($u['avatar'] ?? null) ?>" class="round-40 rounded-circle object-fit-cover border border-primary-subtle flex-shrink-0" width="40" height="40" alt="user" />
               <div class="flex-grow-1 min-w-0">
                 <div class="d-flex align-items-center justify-content-between mb-1">
-                  <h6 class="fw-semibold mb-0 text-truncate"><?= esc($u['name']) ?></h6>
+                  <div class="fw-semibold mb-0 text-truncate" style="font-size: 0.78rem; line-height: 1.25;"><?= esc($u['name']) ?></div>
                   <div class="dropdown dropstart" onclick="event.stopPropagation();">
                     <a href="javascript:void(0)" class="text-muted p-1" data-bs-toggle="dropdown" aria-expanded="false">
                       <i class="ti ti-dots-vertical fs-5"></i>
@@ -171,7 +171,7 @@
                     </ul>
                   </div>
                 </div>
-                <div class="text-muted small text-truncate mb-2"><?= esc($u['email']) ?></div>
+                <div class="text-muted text-truncate mb-2" style="font-size: 0.75rem;"><?= esc($u['email']) ?></div>
                 <div class="d-flex flex-wrap align-items-center gap-1 mb-2">
                   <?php if ($isAdmin): ?>
                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle">Admin</span>
