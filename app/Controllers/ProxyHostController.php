@@ -248,7 +248,7 @@ class ProxyHostController extends BaseController
 
             return redirect()->back()
                 ->withInput()
-                ->with('error', 'Error al desplegar en Nginx: ' . ($nginxResult['error'] ?? 'Validación fallida.'));
+                ->with('error', 'Error al desplegar la configuración: ' . ($nginxResult['error'] ?? 'Validación fallida.'));
         }
 
         // Registro en auditoría
@@ -268,7 +268,7 @@ class ProxyHostController extends BaseController
         }
 
         return redirect()->to(base_url('proxy-hosts'))
-            ->with('success', "Proxy Host \"{$data['domain']}\" configurado y aplicado en Nginx con éxito.");
+            ->with('success', "Proxy Host \"{$data['domain']}\" se ha configurado con éxito.");
     }
 
     /**
@@ -442,7 +442,7 @@ class ProxyHostController extends BaseController
 
             return redirect()->back()
                 ->withInput()
-                ->with('error', 'Error al aplicar cambios en Nginx: ' . ($nginxResult['error'] ?? 'Validación fallida.'));
+                ->with('error', 'Error al aplicar cambios: ' . ($nginxResult['error'] ?? 'Validación fallida.'));
         }
 
         // Registro en auditoría
@@ -462,7 +462,7 @@ class ProxyHostController extends BaseController
         }
 
         return redirect()->to(base_url('proxy-hosts'))
-            ->with('success', "Proxy Host \"{$data['domain']}\" actualizado y aplicado en Nginx con éxito.");
+            ->with('success', "Proxy Host \"{$data['domain']}\" se ha actualizado con éxito.");
     }
 
     /**
@@ -500,27 +500,27 @@ class ProxyHostController extends BaseController
             if ($this->request->isAJAX()) {
                 return $this->response->setJSON([
                     'success' => false,
-                    'message' => 'Error en Nginx: ' . ($nginxResult['error'] ?? 'Fallo al alternar.'),
+                    'message' => 'Error en el servidor web: ' . ($nginxResult['error'] ?? 'Fallo al alternar.'),
                 ]);
             }
-            return redirect()->to(base_url('proxy-hosts'))->with('error', 'Error en Nginx: ' . ($nginxResult['error'] ?? ''));
+            return redirect()->to(base_url('proxy-hosts'))->with('error', 'Error en el servidor web: ' . ($nginxResult['error'] ?? ''));
         }
 
         AuditLogModel::log(
             'proxy_toggle',
-            "Proxy Host [ID: {$id}] {$existing['domain']} fue {$statusLabel} en Nginx."
+            "Proxy Host [ID: {$id}] {$existing['domain']} fue {$statusLabel}."
         );
 
         if ($this->request->isAJAX()) {
             return $this->response->setJSON([
                 'success' => true,
                 'enabled' => $newStatus,
-                'message' => "Proxy Host \"{$existing['domain']}\" {$statusLabel} en Nginx."
+                'message' => "Proxy Host \"{$existing['domain']}\" se ha {$statusLabel} con éxito."
             ]);
         }
 
         return redirect()->to(base_url('proxy-hosts'))
-            ->with('success', "Proxy Host \"{$existing['domain']}\" {$statusLabel} en Nginx.");
+            ->with('success', "Proxy Host \"{$existing['domain']}\" se ha {$statusLabel} con éxito.");
     }
 
     /**

@@ -99,10 +99,12 @@
       el.className = iconClass;
     });
 
-    // Resaltar con punto verde/rojo antes de la IP (texto en color normal)
+    // Resaltar con punto verde/rojo antes de la IP (tanto para pools como para destino único)
     if (data.servers && data.servers.length > 0) {
       data.servers.forEach(srv => {
-        const targetEls = document.querySelectorAll('.target-item-' + id + '[data-host="' + srv.host + '"][data-port="' + srv.port + '"]');
+        const targetEls = document.querySelectorAll(
+          '.target-item-' + id + '[data-host="' + srv.host + '"][data-port="' + srv.port + '"], .single-target-' + id
+        );
         targetEls.forEach(el => {
           const dot = el.querySelector('.target-dot');
           el.classList.remove('text-danger', 'fw-bold');
@@ -123,28 +125,32 @@
           }
         });
       });
-    } else {
-      const allTargets = document.querySelectorAll('.single-target-' + id + ', .target-item-' + id);
-      allTargets.forEach(el => {
-        const dot = el.querySelector('.target-dot');
-        el.classList.remove('text-danger', 'fw-bold');
-        if (data.is_online) {
-          el.removeAttribute('title');
-          if (dot) {
-            dot.className = 'target-dot rounded-circle bg-success me-1 flex-shrink-0';
-            dot.style.opacity = '1';
-            dot.setAttribute('title', 'Servidor Operativo');
-          }
-        } else {
-          el.setAttribute('title', 'Servidor KO (Sin respuesta)');
-          if (dot) {
-            dot.className = 'target-dot rounded-circle bg-danger me-1 flex-shrink-0';
-            dot.style.opacity = '1';
-            dot.setAttribute('title', 'Servidor KO (Sin respuesta)');
-          }
-        }
-      });
     }
+
+    // Actualizar siempre cualquier elemento de destino único o pool si no se cubrió
+    const allTargets = document.querySelectorAll('.single-target-' + id + ', .target-item-' + id);
+    allTargets.forEach(el => {
+      const dot = el.querySelector('.target-dot');
+      if (!dot || (dot.classList.contains('bg-success') || dot.classList.contains('bg-danger'))) {
+        return; // ya fue actualizado por la lista de servers
+      }
+      el.classList.remove('text-danger', 'fw-bold');
+      if (data.is_online) {
+        el.removeAttribute('title');
+        if (dot) {
+          dot.className = 'target-dot rounded-circle bg-success me-1 flex-shrink-0';
+          dot.style.opacity = '1';
+          dot.setAttribute('title', 'Servidor Operativo');
+        }
+      } else {
+        el.setAttribute('title', 'Servidor KO (Sin respuesta)');
+        if (dot) {
+          dot.className = 'target-dot rounded-circle bg-danger me-1 flex-shrink-0';
+          dot.style.opacity = '1';
+          dot.setAttribute('title', 'Servidor KO (Sin respuesta)');
+        }
+      }
+    });
   }
 
   function updateElementTooltip(element, title) {
@@ -224,7 +230,7 @@
         if (window.Swal) {
           Swal.fire({
             icon: 'error',
-            title: 'Error de Nginx',
+            title: 'Error de Configuración',
             text: data.message || 'No se pudo alternar el estado.',
             confirmButtonText: 'Entendido'
           });

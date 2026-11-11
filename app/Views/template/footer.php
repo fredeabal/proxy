@@ -20,7 +20,8 @@
 
   <?php if (!empty($extraScripts)): ?>
     <?php foreach ((array) $extraScripts as $script): ?>
-      <script src="<?= base_url($script) ?>"></script>
+      <?php $scriptVer = file_exists(FCPATH . $script) ? filemtime(FCPATH . $script) : time(); ?>
+      <script src="<?= base_url($script . '?v=' . $scriptVer) ?>"></script>
     <?php endforeach; ?>
   <?php endif; ?>
 
