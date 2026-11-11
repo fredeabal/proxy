@@ -106,7 +106,21 @@ if [ -f "${INSTALL_DIR}/executor/proxy-executor.sh" ]; then
     chmod 0755 /usr/local/bin/proxy-executor
 fi
 
+mkdir -p /var/www/letsencrypt/.well-known/acme-challenge
+chown -R www-data:www-data /var/www/letsencrypt 2>/dev/null || true
+chmod -R 755 /var/www/letsencrypt 2>/dev/null || true
+
 mkdir -p /etc/nginx/conf.d
+if [ ! -f /etc/nginx/conf.d/proxy_manager_geoip.conf ]; then
+cat << 'EOF' > /etc/nginx/conf.d/proxy_manager_geoip.conf
+# ==============================================================================
+# Reverse Proxy Manager - Configuración GeoIP2 por defecto (Desactivado)
+# ==============================================================================
+map $remote_addr $geoip_blocked {
+    default 0;
+}
+EOF
+fi
 cat << 'EOF' > /etc/nginx/conf.d/proxy_manager_cloudflare_realip.conf
 # ==============================================================================
 # Reverse Proxy Manager - Restauración de IP Real para Cloudflare (CF-Connecting-IP)

@@ -135,7 +135,8 @@ class NginxValidator
             // Un archivo vhost (server {}) debe envolverse en un bloque http {} para que nginx -t -c pueda validarlo
             $testWrapper = tempnam(sys_get_temp_dir(), 'nginx_val_');
             $mimeInclude = file_exists('/etc/nginx/mime.types') ? 'include /etc/nginx/mime.types;' : '';
-            $wrapperContent = "events { worker_connections 1024; }\nhttp {\n    {$mimeInclude}\n    include \"{$filePath}\";\n}\n";
+            $confdInclude = is_dir('/etc/nginx/conf.d') ? 'include /etc/nginx/conf.d/*.conf;' : '';
+            $wrapperContent = "events { worker_connections 1024; }\nhttp {\n    {$mimeInclude}\n    map \$remote_addr \$geoip_blocked {\n        default 0;\n    }\n    {$confdInclude}\n    include \"{$filePath}\";\n}\n";
             file_put_contents($testWrapper, $wrapperContent);
 
             $cmd = [$nginxBin, '-t', '-c', $testWrapper];

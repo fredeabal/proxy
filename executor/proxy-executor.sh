@@ -69,10 +69,22 @@ case "${ACTION}" in
         if [ -f /etc/nginx/mime.types ]; then
             MIME_LINE="include /etc/nginx/mime.types;"
         fi
+
+        # Incluir configuraciones de conf.d (como GeoIP2 maps o variables compartidas) si existen
+        CONFD_LINE=""
+        if [ -d /etc/nginx/conf.d ]; then
+            CONFD_LINE="include /etc/nginx/conf.d/*.conf;"
+        fi
+
         cat <<EOF > "${TEST_WRAPPER}"
 events { worker_connections 1024; }
 http {
     ${MIME_LINE}
+    # Definición por defecto de variables requeridas por vhosts si no están en conf.d
+    map \$remote_addr \$geoip_blocked {
+        default 0;
+    }
+    ${CONFD_LINE}
     include "${REAL_PATH}";
 }
 EOF
