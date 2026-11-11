@@ -186,13 +186,16 @@
                     <?php if (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
                       <div class="d-flex flex-column" style="gap: 1px;">
                         <?php foreach ($item['upstreams'] as $srv): ?>
-                          <span class="font-monospace text-body fw-medium" style="font-size: 0.78rem; line-height: 1.25;">
+                          <span class="font-monospace text-body fw-medium target-item-<?= $item['id'] ?>" 
+                                data-host="<?= esc($srv['server_host']) ?>" 
+                                data-port="<?= esc($srv['server_port']) ?>" 
+                                style="font-size: 0.78rem; line-height: 1.25; transition: color 0.2s;">
                             <?= esc($srv['server_host']) ?>:<?= esc($srv['server_port']) ?>
                           </span>
                         <?php endforeach; ?>
                       </div>
                     <?php else: ?>
-                      <span class="fw-semibold font-monospace">
+                      <span class="fw-semibold font-monospace single-target-<?= $item['id'] ?>" style="transition: color 0.2s;">
                         <?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?>
                       </span>
                       <?php if ($isLocalhost): ?>
@@ -454,13 +457,16 @@
               <?php if (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
                 <div class="d-inline-flex flex-column align-top ms-1" style="gap: 1px;">
                   <?php foreach ($item['upstreams'] as $srv): ?>
-                    <span class="font-monospace text-body fw-medium" style="font-size: 0.78rem; line-height: 1.25;">
+                    <span class="font-monospace text-body fw-medium target-item-<?= $item['id'] ?>" 
+                          data-host="<?= esc($srv['server_host']) ?>" 
+                          data-port="<?= esc($srv['server_port']) ?>" 
+                          style="font-size: 0.78rem; line-height: 1.25; transition: color 0.2s;">
                       <?= esc($item['scheme']) ?>://<?= esc($srv['server_host']) ?>:<?= esc($srv['server_port']) ?>
                     </span>
                   <?php endforeach; ?>
                 </div>
               <?php else: ?>
-                <span class="font-monospace text-body"><?= esc($item['scheme']) ?>://<?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?></span>
+                <span class="font-monospace text-body single-target-<?= $item['id'] ?>" style="transition: color 0.2s;"><?= esc($item['scheme']) ?>://<?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?></span>
               <?php endif; ?>
             </div>
             <div class="mt-1">
@@ -625,6 +631,36 @@ function applyHealthUI(id, data) {
   icons.forEach(el => {
     el.className = iconClass;
   });
+
+  // Resaltar en rojo los destinos/IPs caídos
+  if (data.servers && data.servers.length > 0) {
+    data.servers.forEach(srv => {
+      const targetEls = document.querySelectorAll('.target-item-' + id + '[data-host="' + srv.host + '"][data-port="' + srv.port + '"]');
+      targetEls.forEach(el => {
+        if (srv.is_online) {
+          el.classList.remove('text-danger', 'fw-bold');
+          el.classList.add('text-body');
+          el.removeAttribute('title');
+        } else {
+          el.classList.remove('text-body');
+          el.classList.add('text-danger', 'fw-bold');
+          el.setAttribute('title', 'Servidor KO (Sin respuesta)');
+        }
+      });
+    });
+  } else {
+    const allTargets = document.querySelectorAll('.single-target-' + id + ', .target-item-' + id);
+    allTargets.forEach(el => {
+      if (data.is_online) {
+        el.classList.remove('text-danger', 'fw-bold');
+        el.removeAttribute('title');
+      } else {
+        el.classList.remove('text-body');
+        el.classList.add('text-danger', 'fw-bold');
+        el.setAttribute('title', 'Servidor KO (Sin respuesta)');
+      }
+    });
+  }
 }
 
 function updateElementTooltip(element, title) {

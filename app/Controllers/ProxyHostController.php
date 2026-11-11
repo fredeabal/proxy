@@ -562,6 +562,7 @@ class ProxyHostController extends BaseController
         $bestLatency  = 999999;
         $lastDetail   = '';
         $httpCode     = 0;
+        $servers      = [];
 
         foreach ($targets as $t) {
             $h = $t['host'];
@@ -594,9 +595,11 @@ class ProxyHostController extends BaseController
             $errMsg = curl_error($ch);
 
             $lat = round(($time > 0 ? $time : 0.05) * 1000);
+            $isTargetOnline = false;
 
             if ($errNo === 0 && $code > 0 && $code < 500) {
                 $onlineCount++;
+                $isTargetOnline = true;
                 $httpCode = $code;
                 if ($lat < $bestLatency) {
                     $bestLatency = $lat;
@@ -607,6 +610,7 @@ class ProxyHostController extends BaseController
                 if ($fp) {
                     fclose($fp);
                     $onlineCount++;
+                    $isTargetOnline = true;
                     if ($lat < $bestLatency) {
                         $bestLatency = $lat;
                     }
@@ -614,6 +618,12 @@ class ProxyHostController extends BaseController
                     $lastDetail = !empty($errMsg) ? $errMsg : ($sMsg ?: 'Conexión rechazada');
                 }
             }
+
+            $servers[] = [
+                'host'      => $h,
+                'port'      => $p,
+                'is_online' => $isTargetOnline,
+            ];
         }
 
         if ($bestLatency === 999999) {
@@ -659,6 +669,7 @@ class ProxyHostController extends BaseController
             'http_code'  => $httpCode,
             'detail'     => $detail,
             'latency_ms' => $bestLatency,
+            'servers'    => $servers,
         ]);
     }
 
