@@ -11,66 +11,58 @@
 </div>
 
 <!-- Métricas Resumen -->
-<div class="row g-3 mb-4">
+<div class="row g-2 g-md-3 mb-3 mb-md-4 metrics-summary-row">
   <div class="col-6 col-md-3">
-    <div class="card border shadow-none mb-0">
-      <div class="card-body p-3">
-        <div class="d-flex align-items-center gap-3">
-          <div class="round-40 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle">
-            <i class="ti ti-certificate fs-6"></i>
-          </div>
-          <div>
-            <span class="text-muted small">Total</span>
-            <h5 class="fw-bold mb-0 text-body"><?= $totalCerts ?></h5>
-          </div>
+    <div class="card border shadow-none mb-0 h-100">
+      <div class="card-body p-3 d-flex align-items-center gap-3">
+        <div class="round-40 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle">
+          <i class="ti ti-certificate fs-5"></i>
+        </div>
+        <div>
+          <span class="text-muted fs-2 text-uppercase fw-semibold">Total</span>
+          <h4 class="fw-bold mb-0"><?= $totalCerts ?></h4>
         </div>
       </div>
     </div>
   </div>
 
   <div class="col-6 col-md-3">
-    <div class="card border shadow-none mb-0">
-      <div class="card-body p-3">
-        <div class="d-flex align-items-center gap-3">
-          <div class="round-40 d-flex align-items-center justify-content-center bg-success-subtle text-success rounded-circle">
-            <i class="ti ti-shield-check fs-6"></i>
-          </div>
-          <div>
-            <span class="text-muted small">Válidos</span>
-            <h5 class="fw-bold mb-0 text-success"><?= $validCerts ?></h5>
-          </div>
+    <div class="card border shadow-none mb-0 h-100">
+      <div class="card-body p-3 d-flex align-items-center gap-3">
+        <div class="round-40 d-flex align-items-center justify-content-center bg-success-subtle text-success rounded-circle">
+          <i class="ti ti-circle-check fs-5"></i>
+        </div>
+        <div>
+          <span class="text-muted fs-2 text-uppercase fw-semibold">Válidos</span>
+          <h4 class="fw-bold mb-0 text-success"><?= $validCerts ?></h4>
         </div>
       </div>
     </div>
   </div>
 
   <div class="col-6 col-md-3">
-    <div class="card border shadow-none mb-0">
-      <div class="card-body p-3">
-        <div class="d-flex align-items-center gap-3">
-          <div class="round-40 d-flex align-items-center justify-content-center bg-warning-subtle text-warning rounded-circle">
-            <i class="ti ti-alert-triangle fs-6"></i>
-          </div>
-          <div>
-            <span class="text-muted small">Por Caducar</span>
-            <h5 class="fw-bold mb-0 text-warning"><?= $expiringSoon ?></h5>
-          </div>
+    <div class="card border shadow-none mb-0 h-100">
+      <div class="card-body p-3 d-flex align-items-center gap-3">
+        <div class="round-40 d-flex align-items-center justify-content-center bg-warning-subtle text-warning rounded-circle">
+          <i class="ti ti-alert-triangle fs-5"></i>
+        </div>
+        <div>
+          <span class="text-muted fs-2 text-uppercase fw-semibold">Por Caducar</span>
+          <h4 class="fw-bold mb-0 text-warning"><?= $expiringSoon ?></h4>
         </div>
       </div>
     </div>
   </div>
 
   <div class="col-6 col-md-3">
-    <div class="card border shadow-none mb-0">
-      <div class="card-body p-3">
-        <div class="d-flex align-items-center gap-3">
-          <div class="round-40 d-flex align-items-center justify-content-center bg-danger-subtle text-danger rounded-circle">
-            <i class="ti ti-shield-x fs-6"></i>
-          </div>
-          <div>
-            <span class="text-muted small">Caducados</span>
-            <h5 class="fw-bold mb-0 text-danger"><?= $expiredCerts ?></h5>
-          </div>
+    <div class="card border shadow-none mb-0 h-100">
+      <div class="card-body p-3 d-flex align-items-center gap-3">
+        <div class="round-40 d-flex align-items-center justify-content-center bg-danger-subtle text-danger rounded-circle">
+          <i class="ti ti-shield-x fs-5"></i>
+        </div>
+        <div>
+          <span class="text-muted fs-2 text-uppercase fw-semibold">Caducados</span>
+          <h4 class="fw-bold mb-0 text-danger"><?= $expiredCerts ?></h4>
         </div>
       </div>
     </div>
@@ -80,7 +72,7 @@
 <!-- =========================================================================
      1. VISTA DESKTOP: TABLA INTEGRADA (d-none d-md-block)
      ========================================================================= -->
-<div class="card border shadow-none d-none d-md-block">
+<div class="card border shadow-none mb-4 w-100 d-none d-md-block" id="certificatesCard">
   <!-- Cabecera de filtros y búsqueda integrada en el card sin botón de buscar -->
   <div class="card-body p-3 border-bottom">
     <div class="row g-2 align-items-center">

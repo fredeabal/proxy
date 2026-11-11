@@ -30,7 +30,7 @@ $currentGeoipMode = $geoipMode ?? 'blocklist';
           <i class="ti ti-ban fs-5"></i>
         </div>
         <div>
-          <span class="text-muted fs-2 text-uppercase fw-semibold d-block">Bloqueadas</span>
+          <span class="text-muted fs-2 text-uppercase fw-semibold">Bloqueadas</span>
           <h4 class="fw-bold mb-0"><?= $totalBanned ?></h4>
         </div>
       </div>
@@ -43,7 +43,7 @@ $currentGeoipMode = $geoipMode ?? 'blocklist';
           <i class="ti ti-shield-lock fs-5"></i>
         </div>
         <div>
-          <span class="text-muted fs-2 text-uppercase fw-semibold d-block">Auto-Ban</span>
+          <span class="text-muted fs-2 text-uppercase fw-semibold">Auto-Ban</span>
           <h4 class="fw-bold mb-0"><?= $autoBannedCount ?></h4>
         </div>
       </div>
@@ -56,7 +56,7 @@ $currentGeoipMode = $geoipMode ?? 'blocklist';
           <i class="ti ti-clock fs-5"></i>
         </div>
         <div>
-          <span class="text-muted fs-2 text-uppercase fw-semibold d-block">Temporales</span>
+          <span class="text-muted fs-2 text-uppercase fw-semibold">Temporales</span>
           <h4 class="fw-bold mb-0"><?= $tempBannedCount ?></h4>
         </div>
       </div>
@@ -69,7 +69,7 @@ $currentGeoipMode = $geoipMode ?? 'blocklist';
           <i class="ti ti-lock fs-5"></i>
         </div>
         <div>
-          <span class="text-muted fs-2 text-uppercase fw-semibold d-block">Permanentes</span>
+          <span class="text-muted fs-2 text-uppercase fw-semibold">Permanentes</span>
           <h4 class="fw-bold mb-0"><?= $permBannedCount ?></h4>
         </div>
       </div>
@@ -300,7 +300,7 @@ $currentGeoipMode = $geoipMode ?? 'blocklist';
                     <div class="round-32 d-flex align-items-center justify-content-center bg-danger-subtle text-danger rounded-circle flex-shrink-0">
                       <i class="ti <?= $isCidr ? 'ti-world' : 'ti-ban' ?> fs-5"></i>
                     </div>
-                    <span class="fw-semibold font-monospace text-body text-break"><?= esc($ban['ip_address']) ?></span>
+                    <span class="fw-semibold font-monospace text-body text-break" style="font-size: 0.78rem; line-height: 1.25;"><?= esc($ban['ip_address']) ?></span>
                   </div>
                 </td>
                 <td>
@@ -346,7 +346,7 @@ $currentGeoipMode = $geoipMode ?? 'blocklist';
         <?php foreach ($bannedList as $ban): ?>
           <div class="card border shadow-none mb-2 p-3 mobile-card-item ban-item">
             <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-              <span class="fw-semibold font-monospace text-body text-break"><?= esc($ban['ip_address']) ?></span>
+              <span class="fw-semibold font-monospace text-body text-break" style="font-size: 0.78rem; line-height: 1.25;"><?= esc($ban['ip_address']) ?></span>
               <span class="small fw-semibold <?= (int) ($ban['is_permanent'] ?? 0) === 1 ? 'text-danger' : 'text-warning' ?>">
                 <?= (int) ($ban['is_permanent'] ?? 0) === 1 ? 'Permanente' : 'Temporal' ?>
               </span>
