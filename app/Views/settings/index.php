@@ -46,7 +46,7 @@
           Se solicitará el código de 6 dígitos de tu app en cada inicio de sesión.
         </p>
       </div>
-      <form method="post" action="<?= base_url('settings/2fa/disable') ?>" class="d-flex justify-content-center pt-2">
+      <form method="post" action="<?= base_url('settings/2fa/disable') ?>" class="d-flex justify-content-center mt-4 pt-2">
         <?= csrf_field() ?>
         <button type="submit" class="btn btn-danger btn-sm px-4">Desactivar</button>
       </form>
@@ -99,7 +99,7 @@
             </div>
           </div>
 
-          <div class="col-12 d-flex justify-content-center align-items-center gap-2 pt-2">
+          <div class="col-12 d-flex justify-content-center align-items-center gap-2 mt-4 pt-2">
             <a href="<?= base_url('settings') ?>" class="btn btn-dark btn-sm">Cancelar</a>
             <button type="submit" class="btn btn-primary btn-sm px-3">Activar</button>
           </div>
@@ -257,7 +257,7 @@
           </div>
         </div>
 
-        <div class="col-12 d-flex justify-content-between align-items-center pt-2">
+        <div class="col-12 d-flex justify-content-between align-items-center mt-4 pt-2">
           <a href="<?= base_url('dashboard') ?>" class="btn btn-dark btn-sm">Cancelar</a>
           <button type="submit" class="btn btn-primary btn-sm px-4">Guardar</button>
         </div>

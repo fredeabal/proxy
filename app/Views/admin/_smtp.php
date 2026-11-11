@@ -118,7 +118,7 @@
           </div>
         </div>
 
-        <div class="col-12 d-flex justify-content-center gap-2 pt-2">
+        <div class="col-12 d-flex justify-content-center gap-2 mt-4 pt-2">
           <a href="<?= base_url('admin') ?>" class="btn btn-dark btn-sm">Cancelar</a>
           <button type="submit" class="btn btn-primary btn-sm px-4">Guardar</button>
         </div>
@@ -152,7 +152,7 @@
           </div>
         </div>
 
-        <div class="col-12 d-flex justify-content-center gap-2 pt-2">
+        <div class="col-12 d-flex justify-content-center gap-2 mt-4 pt-2">
           <button type="submit" id="btnTestSmtp" class="btn btn-primary btn-sm px-3 d-inline-flex align-items-center gap-1">Enviar
           </button>
         </div>

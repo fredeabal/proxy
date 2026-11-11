@@ -48,6 +48,12 @@ if (! function_exists('audit_label')) {
             'ip_banned'                     => 'ip ban',
             'ip_auto_banned'                => 'auto ban',
             'ip_unbanned'                   => 'ip unban',
+            'maintenance_sessions_clear'    => 'sesiones cln',
+            'maintenance_cache_clear'       => 'caché cln',
+            'maintenance_logs_clear'        => 'logs cln',
+            'maintenance_audit_clear'       => 'audit cln',
+            'maintenance_db_optimize'       => 'db optim',
+            'maintenance_full'              => 'mantenim.',
         ];
 
         if (isset($map[$action])) {
@@ -67,12 +73,13 @@ if (! function_exists('audit_badge_class')) {
         if (str_contains($act, 'failed') || str_contains($act, 'blocked') || str_contains($act, 'delete') || str_contains($act, 'banned') && !str_contains($act, 'unbanned')) {
             return 'bg-danger-subtle text-danger border-danger';
         }
-        if (str_contains($act, 'create') || str_contains($act, 'success') || str_contains($act, 'enable') || str_contains($act, 'unbanned')) {
+        if (str_contains($act, 'create') || str_contains($act, 'success') || str_contains($act, 'enable') || str_contains($act, 'unbanned') || str_contains($act, 'optimize')) {
             return 'bg-success-subtle text-success border-success';
         }
         if (str_contains($act, 'update') || str_contains($act, 'toggle') || str_contains($act, 'renew')
             || str_contains($act, 'test') || str_contains($act, 'download') || str_contains($act, 'challenge')
-            || str_contains($act, 'restore') || str_contains($act, 'disabled')) {
+            || str_contains($act, 'restore') || str_contains($act, 'disabled') || str_contains($act, 'clear')
+            || str_contains($act, 'maintenance')) {
             return 'bg-warning-subtle text-warning border-warning';
         }
         return 'bg-secondary-subtle text-secondary border-secondary';

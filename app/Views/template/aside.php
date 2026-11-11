@@ -6,6 +6,7 @@
       $firstSegment = $uri->getTotalSegments() > 0 ? $uri->getSegment(1) : 'dashboard';
       $currentSection = $activeMenu ?? ($firstSegment ?: 'dashboard');
       $currentTab = service('request')->getGet('tab') ?: '';
+      $isAdminUser = (session()->get('user_role') === 'admin');
     ?>
     <aside class="left-sidebar with-vertical">
       <div>
@@ -55,19 +56,30 @@
               </a>
             </li>
 
-            <li class="nav-small-cap mt-4">
-              <i class="ti ti-dots nav-small-cap-icon fs-4"></i>
-              <span class="hide-menu">Sistema</span>
-            </li>
+            <?php if ($isAdminUser): ?>
+              <li class="nav-small-cap mt-4">
+                <i class="ti ti-dots nav-small-cap-icon fs-4"></i>
+                <span class="hide-menu">Sistema</span>
+              </li>
 
-            <li class="sidebar-item">
-              <a class="sidebar-link <?= $currentSection === 'admin' ? 'active' : '' ?>" href="<?= base_url('admin') ?>" aria-expanded="false">
-                <span>
-                  <i class="ti ti-settings"></i>
-                </span>
-                <span class="hide-menu">Administración</span>
-              </a>
-            </li>
+              <li class="sidebar-item">
+                <a class="sidebar-link <?= $currentSection === 'users' ? 'active' : '' ?>" href="<?= base_url('users') ?>" aria-expanded="false">
+                  <span>
+                    <i class="ti ti-users"></i>
+                  </span>
+                  <span class="hide-menu">Usuarios</span>
+                </a>
+              </li>
+
+              <li class="sidebar-item">
+                <a class="sidebar-link <?= $currentSection === 'admin' ? 'active' : '' ?>" href="<?= base_url('admin') ?>" aria-expanded="false">
+                  <span>
+                    <i class="ti ti-settings"></i>
+                  </span>
+                  <span class="hide-menu">Administración</span>
+                </a>
+              </li>
+            <?php endif; ?>
           </ul>
         </nav>
       </div>

@@ -38,12 +38,23 @@ class NginxConfigGenerator
             throw new InvalidArgumentException("Esquema inválido: {$scheme}");
         }
 
-        $forwardHost = trim((string) ($proxy['forward_host'] ?? ''));
-        $this->assertSafeForwardHost($forwardHost);
+        $isLb = !empty($proxy['load_balancing_enabled']);
+        if ($isLb) {
+            if (!isset($proxy['upstreams']) && $id > 0) {
+                $upstreamModel = new \App\Models\ProxyUpstreamModel();
+                $proxy['upstreams'] = $upstreamModel->getForProxy($id);
+            }
+            if (empty($proxy['upstreams'])) {
+                throw new InvalidArgumentException("El modo de balanceo de carga requiere al menos un servidor backend configurado.");
+            }
+        } else {
+            $forwardHost = trim((string) ($proxy['forward_host'] ?? ''));
+            $this->assertSafeForwardHost($forwardHost);
 
-        $forwardPort = (int) ($proxy['forward_port'] ?? 80);
-        if ($forwardPort < 1 || $forwardPort > 65535) {
-            throw new InvalidArgumentException("Puerto de destino fuera de rango: {$forwardPort}");
+            $forwardPort = (int) ($proxy['forward_port'] ?? 80);
+            if ($forwardPort < 1 || $forwardPort > 65535) {
+                throw new InvalidArgumentException("Puerto de destino fuera de rango: {$forwardPort}");
+            }
         }
 
         $sslEnabled = !empty($proxy['ssl_enabled']);
@@ -58,6 +69,10 @@ class NginxConfigGenerator
         $lines[] = '# Fecha: ' . date('Y-m-d H:i:s');
         $lines[] = '# ==============================================================================';
         $lines[] = '';
+
+        if ($isLb) {
+            $lines[] = $this->renderUpstreamBlock($proxy);
+        }
 
         if ($sslEnabled) {
             // -------------------------------------------------------------
@@ -171,6 +186,80 @@ class NginxConfigGenerator
     }
 
     /**
+     * Renderiza el bloque `upstream` para balanceo de carga entre múltiples backends.
+     *
+     * @param array $proxy
+     * @return string
+     * @throws InvalidArgumentException
+     */
+    public function renderUpstreamBlock(array $proxy): string
+    {
+        $id = (int) ($proxy['id'] ?? 0);
+        $primaryDomain = strtolower(trim((string) ($proxy['domain'] ?? '')));
+        $upstreamName = $id > 0 ? "upstream_proxy_{$id}" : "upstream_proxy_" . preg_replace('/[^a-z0-9]/', '_', $primaryDomain);
+
+        $algorithm = strtolower(trim((string) ($proxy['lb_algorithm'] ?? 'round_robin')));
+        if (!in_array($algorithm, ['round_robin', 'least_conn', 'ip_hash'], true)) {
+            throw new InvalidArgumentException("Algoritmo de balanceo inválido: {$algorithm}");
+        }
+
+        $upstreams = $proxy['upstreams'] ?? [];
+        if (empty($upstreams)) {
+            throw new InvalidArgumentException("El modo de balanceo de carga requiere al menos un servidor backend configurado.");
+        }
+
+        $lines = [];
+        $lines[] = '# ------------------------------------------------------------------------------';
+        $lines[] = "# Upstream Pool [ID: {$id}] - Algoritmo: {$algorithm}";
+        $lines[] = '# ------------------------------------------------------------------------------';
+        $lines[] = "upstream {$upstreamName} {";
+
+        if ($algorithm === 'least_conn') {
+            $lines[] = '    least_conn;';
+        } elseif ($algorithm === 'ip_hash') {
+            $lines[] = '    ip_hash;';
+        }
+
+        foreach ($upstreams as $srv) {
+            $host = trim((string) ($srv['server_host'] ?? ''));
+            $this->assertSafeForwardHost($host);
+
+            $port = (int) ($srv['server_port'] ?? 80);
+            if ($port < 1 || $port > 65535) {
+                throw new InvalidArgumentException("Puerto fuera de rango en upstream {$host}: {$port}");
+            }
+
+            $weight = isset($srv['weight']) && (int) $srv['weight'] > 0 ? (int) $srv['weight'] : 1;
+            $maxFails = isset($srv['max_fails']) && (int) $srv['max_fails'] >= 0 ? (int) $srv['max_fails'] : 3;
+            $failTimeout = isset($srv['fail_timeout']) && (int) $srv['fail_timeout'] > 0 ? (int) $srv['fail_timeout'] : 10;
+            $isBackup = !empty($srv['is_backup']);
+            $isDown = !empty($srv['is_down']);
+
+            $serverLine = "    server {$host}:{$port}";
+            if ($weight > 1 && $algorithm !== 'ip_hash') {
+                $serverLine .= " weight={$weight}";
+            }
+            if ($maxFails !== 1 || $failTimeout !== 10) {
+                $serverLine .= " max_fails={$maxFails} fail_timeout={$failTimeout}s";
+            }
+            if ($isBackup && $algorithm !== 'ip_hash') {
+                $serverLine .= ' backup';
+            }
+            if ($isDown) {
+                $serverLine .= ' down';
+            }
+            $serverLine .= ';';
+            $lines[] = $serverLine;
+        }
+
+        $lines[] = '    keepalive 32;';
+        $lines[] = '}';
+        $lines[] = '';
+
+        return implode("\n", $lines);
+    }
+
+    /**
      * Renderiza el bloque `location /` con proxy_pass, timeouts, límites de subida,
      * verificación SSL backend, headers validados contra lista blanca y soporte WebSockets.
      */
@@ -179,10 +268,20 @@ class NginxConfigGenerator
         $pad = str_repeat(' ', $indent);
         $padInner = str_repeat(' ', $indent + 4);
 
+        $id     = (int) ($proxy['id'] ?? 0);
         $scheme = strtolower(trim((string) ($proxy['scheme'] ?? 'http')));
-        $host   = trim((string) ($proxy['forward_host'] ?? '127.0.0.1'));
-        $port   = (int) ($proxy['forward_port'] ?? 80);
+        $isLb   = !empty($proxy['load_balancing_enabled']);
         $ws     = !empty($proxy['websocket_enabled']);
+
+        if ($isLb) {
+            $primaryDomain = strtolower(trim((string) ($proxy['domain'] ?? '')));
+            $upstreamName  = $id > 0 ? "upstream_proxy_{$id}" : "upstream_proxy_" . preg_replace('/[^a-z0-9]/', '_', $primaryDomain);
+            $proxyPassUrl  = "{$scheme}://{$upstreamName}";
+        } else {
+            $host = trim((string) ($proxy['forward_host'] ?? '127.0.0.1'));
+            $port = (int) ($proxy['forward_port'] ?? 80);
+            $proxyPassUrl = "{$scheme}://{$host}:{$port}";
+        }
 
         // Timeouts configurables (1 - 3600s)
         $connectTimeout = isset($proxy['proxy_connect_timeout']) && $proxy['proxy_connect_timeout'] !== '' ? (int) $proxy['proxy_connect_timeout'] : 60;
@@ -210,7 +309,14 @@ class NginxConfigGenerator
         $lines[] = "{$padInner}}";
         $lines[] = '';
         $lines[] = "{$padInner}client_max_body_size {$maxBodyDirective};";
-        $lines[] = "{$padInner}proxy_pass {$scheme}://{$host}:{$port};";
+        $lines[] = "{$padInner}proxy_pass {$proxyPassUrl};";
+
+        if ($isLb) {
+            $lines[] = "{$padInner}proxy_next_upstream error timeout invalid_header http_502 http_503;";
+            $lines[] = "{$padInner}proxy_next_upstream_tries 3;";
+            $lines[] = "{$padInner}proxy_next_upstream_timeout 10s;";
+        }
+
         $lines[] = "{$padInner}proxy_set_header Host \$host;";
         $lines[] = "{$padInner}proxy_set_header X-Real-IP \$remote_addr;";
         $lines[] = "{$padInner}proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;";
@@ -228,8 +334,12 @@ class NginxConfigGenerator
         $sslVerify = !empty($proxy['proxy_ssl_verify']);
         if ($scheme === 'https' || array_key_exists('proxy_ssl_verify', $proxy)) {
             $verifyState = $sslVerify ? 'on' : 'off';
-            // Si el destino es una IP, enviamos $host como SNI; si es un dominio interno, enviamos ese dominio
-            $sniName = filter_var($host, FILTER_VALIDATE_IP) !== false ? '$host' : $host;
+            if ($isLb) {
+                $sniName = '$host';
+            } else {
+                $host = trim((string) ($proxy['forward_host'] ?? '127.0.0.1'));
+                $sniName = filter_var($host, FILTER_VALIDATE_IP) !== false ? '$host' : $host;
+            }
             $lines[] = '';
             $lines[] = "{$padInner}# Verificación SSL y SNI hacia el backend";
             $lines[] = "{$padInner}proxy_ssl_server_name on;";

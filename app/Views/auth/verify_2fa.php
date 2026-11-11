@@ -72,7 +72,7 @@
                   </div>
                 </div>
 
-                <div class="d-flex align-items-center justify-content-center gap-2">
+                <div class="d-flex align-items-center justify-content-center gap-2 mt-4 pt-2">
                   <a href="<?= base_url('logout') ?>" class="btn btn-dark btn-sm">Cancelar</a>
                   <button type="submit" class="btn btn-primary btn-sm">Verificar</button>
                 </div>

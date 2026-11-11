@@ -31,6 +31,8 @@ class ProxyHostModel extends Model
         'proxy_ssl_verify',
         'hsts_enabled',
         'custom_vhost',
+        'load_balancing_enabled',
+        'lb_algorithm',
     ];
 
     protected bool $allowEmptyInserts = false;
@@ -56,6 +58,8 @@ class ProxyHostModel extends Model
         'client_max_body_size'  => 'permit_empty|is_natural|less_than_equal_to[10240]',
         'proxy_ssl_verify'      => 'permit_empty|in_list[0,1]',
         'hsts_enabled'          => 'permit_empty|in_list[0,1]',
+        'load_balancing_enabled' => 'permit_empty|in_list[0,1]',
+        'lb_algorithm'          => 'permit_empty|in_list[round_robin,least_conn,ip_hash]',
     ];
 
     protected $validationMessages = [

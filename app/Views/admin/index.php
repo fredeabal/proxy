@@ -9,11 +9,13 @@
  *  4. Copias de Seguridad (_backups.php)
  *  5. Auditoría (_audit.php)
  *  6. Logs Nginx (_logs.php)
+ *  7. Mantenimiento (_maintenance.php)
  *
  * Modales (_modals.php)
  *
  * Variables disponibles:
- *  - $currentTab (string: 'security', 'bans', 'smtp', 'backups', 'audit', 'logs')
+ *  - $currentTab (string: 'security', 'bans', 'smtp', 'backups', 'audit', 'logs', 'maintenance')
+ *  - $maintenanceStats (array)
  *  - $defaultEmail (string)
  *  - $twoFactorEnabled (bool)
  *  - $pendingSecret (string)
@@ -123,6 +125,18 @@ $totpQrCode = $totpQrCode ?? '';
       <i class="ti ti-file-text me-1"></i> Logs Nginx
     </button>
   </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link <?= $currentTab === 'maintenance' ? 'active' : '' ?>"
+            id="tab-maintenance-btn"
+            data-bs-toggle="tab"
+            data-bs-target="#tab-maintenance"
+            type="button"
+            role="tab"
+            aria-controls="tab-maintenance"
+            aria-selected="<?= $currentTab === 'maintenance' ? 'true' : 'false' ?>">
+      <i class="ti ti-tool me-1"></i> Mantenimiento
+    </button>
+  </li>
 </ul>
 
 <!-- =========================================================================
@@ -158,6 +172,11 @@ $totpQrCode = $totpQrCode ?? '';
   <!-- 6. PESTAÑA: LOGS NGINX -->
   <div class="tab-pane fade <?= $currentTab === 'logs' ? 'show active' : '' ?>" id="tab-logs" role="tabpanel" aria-labelledby="tab-logs-btn">
     <?= view('admin/_logs', get_defined_vars()) ?>
+  </div>
+
+  <!-- 7. PESTAÑA: MANTENIMIENTO DEL SISTEMA -->
+  <div class="tab-pane fade <?= $currentTab === 'maintenance' ? 'show active' : '' ?>" id="tab-maintenance" role="tabpanel" aria-labelledby="tab-maintenance-btn">
+    <?= view('admin/_maintenance', get_defined_vars()) ?>
   </div>
 
 </div>

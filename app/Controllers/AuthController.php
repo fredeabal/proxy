@@ -100,6 +100,7 @@ class AuthController extends BaseController
             'user_name'    => $user['name'],
             'user_email'   => $user['email'],
             'user_role'    => $user['role'],
+            'user_avatar'  => $user['avatar'] ?? null,
             'is_logged_in' => true,
         ]);
 
@@ -184,6 +185,7 @@ class AuthController extends BaseController
             'user_name'    => $user['name'],
             'user_email'   => $user['email'],
             'user_role'    => $user['role'],
+            'user_avatar'  => $user['avatar'] ?? null,
             'is_logged_in' => true,
         ]);
 

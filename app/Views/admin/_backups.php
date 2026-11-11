@@ -38,7 +38,7 @@
           </div>
         </div>
 
-        <div class="col-12 d-flex justify-content-center align-items-center gap-2 pt-2">
+        <div class="col-12 d-flex justify-content-center align-items-center gap-2 mt-4 pt-2">
           <a href="<?= base_url('admin?tab=backups') ?>" class="btn btn-dark btn-sm">Cancelar</a>
           <button type="submit" class="btn btn-primary btn-sm px-3">Guardar</button>
           <button type="submit"

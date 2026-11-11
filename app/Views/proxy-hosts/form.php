@@ -29,6 +29,9 @@ $isForce = (bool) old('force_https', $proxy['force_https'] ?? 0);
 $isHsts  = (bool) old('hsts_enabled', $proxy['hsts_enabled'] ?? 0);
 $isWs    = (bool) old('websocket_enabled', $proxy['websocket_enabled'] ?? 0);
 $isEnabled = (bool) old('enabled', $proxy['enabled'] ?? 1);
+$isLb    = (bool) old('load_balancing_enabled', $proxy['load_balancing_enabled'] ?? 0);
+$currentLbAlgo = old('lb_algorithm', $proxy['lb_algorithm'] ?? 'round_robin');
+$existingUpstreams = old('upstreams', $upstreams ?? []);
 ?>
 
 <!-- Cabecera de Página (Estilo DeCA / NetCrew) -->
@@ -94,8 +97,16 @@ $isEnabled = (bool) old('enabled', $proxy['enabled'] ?? 1);
                 </div>
               </div>
 
-              <!-- Protocolo, Host y Puerto Destino -->
-              <div class="col-12 col-md-3">
+              <!-- Modo y Protocolo -->
+              <div class="col-12 col-md-4">
+                <label for="load_balancing_enabled" class="form-label fw-semibold">Modo</label>
+                <select id="load_balancing_enabled" name="load_balancing_enabled" class="select2 form-control">
+                  <option value="0" <?= !$isLb ? 'selected' : '' ?>>Servidor Único</option>
+                  <option value="1" <?= $isLb ? 'selected' : '' ?>>Balanceo de Carga (Upstream Pool)</option>
+                </select>
+              </div>
+
+              <div class="col-12 col-md-2">
                 <label for="scheme" class="form-label fw-semibold">Protocolo <span class="text-danger">*</span></label>
                 <select id="scheme" name="scheme" class="select2 form-control <?= session('errors.scheme') ? 'is-invalid' : '' ?>" required>
                   <?php $currentScheme = old('scheme', $proxy['scheme'] ?? 'http'); ?>
@@ -104,8 +115,9 @@ $isEnabled = (bool) old('enabled', $proxy['enabled'] ?? 1);
                 </select>
               </div>
 
-              <div class="col-12 col-md-6">
-                <label for="forward_host" class="form-label fw-semibold">IP o Hostname Destino <span class="text-danger">*</span></label>
+              <!-- CAMPOS MODO 1: DESTINO ÚNICO (Estilo estándar limpio) -->
+              <div class="col-8 col-md-4 single-target-col <?= $isLb ? 'd-none' : '' ?>">
+                <label for="forward_host" class="form-label fw-semibold">IP o Hostname <span class="text-danger">*</span></label>
                 <input type="text" 
                        id="forward_host" 
                        name="forward_host" 
@@ -114,8 +126,8 @@ $isEnabled = (bool) old('enabled', $proxy['enabled'] ?? 1);
                        value="<?= esc(old('forward_host', $proxy['forward_host'] ?? '')) ?>">
               </div>
 
-              <div class="col-12 col-md-3">
-                <label for="forward_port" class="form-label fw-semibold">Puerto Destino <span class="text-danger">*</span></label>
+              <div class="col-4 col-md-2 single-target-col <?= $isLb ? 'd-none' : '' ?>">
+                <label for="forward_port" class="form-label fw-semibold">Puerto <span class="text-danger">*</span></label>
                 <input type="number" 
                        id="forward_port" 
                        name="forward_port" 
@@ -124,6 +136,79 @@ $isEnabled = (bool) old('enabled', $proxy['enabled'] ?? 1);
                        min="1" 
                        max="65535" 
                        value="<?= esc(old('forward_port', $proxy['forward_port'] ?? '')) ?>">
+              </div>
+
+              <!-- CAMPO MODO 2: ALGORITMO DE BALANCEO -->
+              <div class="col-12 col-md-6 lb-target-col <?= !$isLb ? 'd-none' : '' ?>">
+                <label for="lb_algorithm" class="form-label fw-semibold">Algoritmo de Distribución</label>
+                <select id="lb_algorithm" name="lb_algorithm" class="select2 form-control">
+                  <option value="round_robin" <?= $currentLbAlgo === 'round_robin' ? 'selected' : '' ?>>Round Robin (Equitativo por turnos)</option>
+                  <option value="least_conn" <?= $currentLbAlgo === 'least_conn' ? 'selected' : '' ?>>Least Connections (Menor carga activa)</option>
+                  <option value="ip_hash" <?= $currentLbAlgo === 'ip_hash' ? 'selected' : '' ?>>IP Hash (Persistencia por IP de cliente)</option>
+                </select>
+              </div>
+
+              <!-- LISTA DE SERVIDORES (MÁXIMO 2) -->
+              <?php
+                $up0 = $existingUpstreams[0] ?? [
+                    'server_host' => $proxy['forward_host'] ?? '',
+                    'server_port' => $proxy['forward_port'] ?? 80,
+                    'role'        => 'active',
+                ];
+                $up1 = $existingUpstreams[1] ?? [
+                    'server_host' => '',
+                    'server_port' => 80,
+                    'role'        => 'active',
+                ];
+                $isUp0Backup = !empty($up0['is_backup']) || (($up0['role'] ?? '') === 'backup');
+                $isUp1Backup = !empty($up1['is_backup']) || (($up1['role'] ?? '') === 'backup');
+              ?>
+              <div id="loadBalancingPanel" class="col-12 lb-target-col <?= !$isLb ? 'd-none' : '' ?>">
+                <div class="pt-2">
+                  <!-- Servidor 1 -->
+                  <div class="row g-2 align-items-end mb-3">
+                    <div class="col-12 col-md-5">
+                      <label class="form-label small fw-semibold mb-1">IP o Hostname <span class="text-danger">*</span></label>
+                      <input type="text" id="upstream_0_host" name="upstreams[0][server_host]" class="form-control font-monospace" placeholder="ej. 192.168.0.2" value="<?= esc($up0['server_host'] ?? '') ?>">
+                    </div>
+                    <div class="col-6 col-md-3">
+                      <label class="form-label small fw-semibold mb-1">Puerto <span class="text-danger">*</span></label>
+                      <input type="number" id="upstream_0_port" name="upstreams[0][server_port]" class="form-control font-monospace" placeholder="8080" min="1" max="65535" value="<?= esc($up0['server_port'] ?? 80) ?>">
+                    </div>
+                    <div class="col-6 col-md-4">
+                      <label class="form-label small fw-semibold mb-1">Tipo de Servidor</label>
+                      <select name="upstreams[0][role]" class="select2 form-control">
+                        <option value="active" <?= !$isUp0Backup ? 'selected' : '' ?>>Primario (Balanceo)</option>
+                        <option value="backup" <?= $isUp0Backup ? 'selected' : '' ?>>Backup (Reserva)</option>
+                      </select>
+                    </div>
+                    <input type="hidden" name="upstreams[0][weight]" value="1">
+                    <input type="hidden" name="upstreams[0][max_fails]" value="3">
+                    <input type="hidden" name="upstreams[0][fail_timeout]" value="10">
+                  </div>
+
+                  <!-- Servidor 2 -->
+                  <div class="row g-2 align-items-end mb-3">
+                    <div class="col-12 col-md-5">
+                      <label class="form-label small fw-semibold mb-1">IP o Hostname</label>
+                      <input type="text" id="upstream_1_host" name="upstreams[1][server_host]" class="form-control font-monospace" placeholder="ej. 192.168.0.3" value="<?= esc($up1['server_host'] ?? '') ?>">
+                    </div>
+                    <div class="col-6 col-md-3">
+                      <label class="form-label small fw-semibold mb-1">Puerto</label>
+                      <input type="number" id="upstream_1_port" name="upstreams[1][server_port]" class="form-control font-monospace" placeholder="8080" min="1" max="65535" value="<?= esc($up1['server_port'] ?? 80) ?>">
+                    </div>
+                    <div class="col-6 col-md-4">
+                      <label class="form-label small fw-semibold mb-1">Tipo de Servidor</label>
+                      <select name="upstreams[1][role]" class="select2 form-control">
+                        <option value="active" <?= !$isUp1Backup ? 'selected' : '' ?>>Primario (Balanceo)</option>
+                        <option value="backup" <?= $isUp1Backup ? 'selected' : '' ?>>Backup (Reserva)</option>
+                      </select>
+                    </div>
+                    <input type="hidden" name="upstreams[1][weight]" value="1">
+                    <input type="hidden" name="upstreams[1][max_fails]" value="3">
+                    <input type="hidden" name="upstreams[1][fail_timeout]" value="10">
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -244,10 +329,8 @@ $isEnabled = (bool) old('enabled', $proxy['enabled'] ?? 1);
             </div>
           </div>
 
-          <hr class="my-4 opacity-10">
-
           <!-- BOTONES DE ACCIÓN AL PIE (Centrados con 8px según Reglas 1.1 - 1.5) -->
-          <div class="d-flex align-items-center justify-content-center gap-2 pt-2">
+          <div class="d-flex align-items-center justify-content-center gap-2 mt-4 pt-2">
             <a href="<?= base_url('proxy-hosts') ?>" class="btn btn-dark btn-sm d-inline-flex align-items-center gap-1">
               <i class="ti ti-x"></i> Cancelar
             </a>
@@ -307,7 +390,7 @@ $isEnabled = (bool) old('enabled', $proxy['enabled'] ?? 1);
           <div id="vhostAlertBox" class="alert alert-danger d-none mt-3 font-monospace small mb-0"></div>
 
           <!-- Barra de Acciones del Vhost (Centrados con 8px según Reglas 1.1 - 1.5) -->
-          <div class="d-flex align-items-center justify-content-center gap-2 pt-4 mt-3 border-top">
+          <div class="d-flex align-items-center justify-content-center gap-2 mt-4 pt-2">
             <a href="<?= base_url('proxy-hosts') ?>" class="btn btn-dark btn-sm d-inline-flex align-items-center gap-1">
               <i class="ti ti-x"></i> Cancelar
             </a>

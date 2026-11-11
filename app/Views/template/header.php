@@ -26,7 +26,6 @@
   <link rel="stylesheet" href="<?= base_url('assets/libs/select2/dist/css/select2.min.css') ?>" />
   <link rel="stylesheet" href="<?= base_url('assets/css/custom.css?v=' . (file_exists(FCPATH . 'assets/css/custom.css') ? filemtime(FCPATH . 'assets/css/custom.css') : time())) ?>" />
   <link rel="stylesheet" href="<?= base_url('assets/libs/sweetalert2/dist/sweetalert2.min.css') ?>" />
-  <link rel="stylesheet" href="<?= base_url('assets/fonts/tabler-icons/tabler-icons.css') ?>" />
 </head>
 
 <body>
@@ -51,32 +50,51 @@
               <i class="ti ti-moon fs-5" id="themeIcon"></i>
             </button>
 
-            <!-- Menú Desplegable de Usuario -->
-            <ul class="navbar-nav flex-row ms-auto align-items-center justify-content-center">
+            <!-- Menú Desplegable de Usuario (Estilo DeCA / Modernize) -->
+            <ul class="navbar-nav flex-row ms-auto align-items-center justify-content-end gap-2">
               <li class="nav-item dropdown">
                 <a class="nav-link pe-0" href="javascript:void(0)" id="dropUser" data-bs-toggle="dropdown" aria-expanded="false">
                   <div class="d-flex align-items-center gap-2">
-                    <div class="round-32 d-flex align-items-center justify-content-center bg-primary text-white rounded-circle fs-3 fw-bold">
-                      <?= esc(substr($displayName, 0, 1)) ?>
+                    <div class="user-profile-img">
+                      <img src="<?= current_user_avatar() ?>" class="round-32 rounded-circle object-fit-cover border border-primary-subtle" width="32" height="32" alt="user" />
                     </div>
-                    <span class="d-none d-md-block fw-semibold text-dark fs-3"><?= esc($displayName) ?></span>
+                    <span class="d-none d-md-block fw-semibold text-body fs-3"><?= esc($displayName) ?></span>
                   </div>
                 </a>
-                <div class="dropdown-menu content-dd dropdown-menu-end dropdown-menu-animate-up shadow-sm border-0" aria-labelledby="dropUser">
-                  <div class="py-3 px-4 border-bottom">
-                    <h6 class="mb-1 fs-3 fw-semibold text-dark"><?= esc($displayName) ?></h6>
-                    <span class="badge bg-primary-subtle text-primary mb-1"><?= esc($displayRole) ?></span>
-                    <p class="mb-0 text-muted small d-flex align-items-center gap-1">
-                      <i class="ti ti-mail"></i> <?= esc($displayEmail) ?>
-                    </p>
-                  </div>
-                  <div class="p-3">
-                    <form action="<?= base_url('logout') ?>" method="post" class="m-0 p-0">
-                      <?= csrf_field() ?>
-                      <button type="submit" class="btn btn-outline-danger btn-sm w-100 d-flex align-items-center justify-content-center gap-2">
-                        <i class="ti ti-logout"></i> Cerrar Sesión
-                      </button>
-                    </form>
+                <div class="dropdown-menu content-dd dropdown-menu-end dropdown-menu-animate-up py-0" aria-labelledby="dropUser">
+                  <div class="profile-dropdown position-relative" data-simplebar>
+                    <div class="py-3 px-7 pb-0 d-flex align-items-center justify-content-between">
+                      <h5 class="mb-0 fs-4 fw-semibold">Perfil de Usuario</h5>
+                      <span class="badge bg-primary-subtle text-primary rounded-pill px-2 py-1 fs-1 fw-semibold">
+                        <i class="ti <?= (session()->get('user_role') === 'admin') ? 'ti-shield' : 'ti-user' ?> me-1"></i><?= (session()->get('user_role') === 'admin') ? 'Administrador' : 'Usuario' ?>
+                      </span>
+                    </div>
+                    <div class="d-flex align-items-center py-9 mx-7 border-bottom">
+                      <img src="<?= current_user_avatar() ?>" class="round-40 rounded-circle object-fit-cover border border-2 border-primary-subtle flex-shrink-0" width="40" height="40" alt="user" />
+                      <div class="ms-3 overflow-hidden">
+                        <h5 class="mb-1 fs-3 fw-semibold text-truncate"><?= esc($displayName) ?></h5>
+                        <span class="d-block text-muted fs-2 text-truncate"><i class="ti ti-mail me-1"></i><?= esc($displayEmail) ?></span>
+                      </div>
+                    </div>
+                    <div class="message-body">
+                      <a href="<?= base_url('profile') ?>" class="py-8 px-7 d-flex align-items-center dropdown-item text-decoration-none">
+                        <span class="d-flex align-items-center justify-content-center bg-primary-subtle rounded-1 p-6 text-primary flex-shrink-0">
+                          <i class="ti ti-user fs-6"></i>
+                        </span>
+                        <div class="w-75 d-inline-block v-middle ps-3">
+                          <h6 class="mb-1 fw-semibold">Mi Perfil</h6>
+                          <span class="d-block text-muted fs-2">Configuración de cuenta y acceso</span>
+                        </div>
+                      </a>
+                    </div>
+                    <div class="d-grid py-3 px-7">
+                      <form action="<?= base_url('logout') ?>" method="post" class="m-0 p-0">
+                        <?= csrf_field() ?>
+                        <button type="submit" class="btn btn-outline-danger btn-sm w-100 d-flex align-items-center justify-content-center gap-2 py-2">
+                          <i class="ti ti-logout fs-4"></i> Cerrar Sesión
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 </div>
               </li>

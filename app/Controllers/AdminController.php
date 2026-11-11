@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Models\AuditLogModel;
 use App\Models\BannedIpModel;
 use App\Models\ProxyHostModel;
+use App\Services\MaintenanceManager;
 use App\Services\NginxManager;
 use App\Services\SystemMonitor;
 use App\Models\SettingModel;
@@ -39,7 +40,7 @@ class AdminController extends BaseController
     public function index(): string
     {
         $tab = trim((string) ($this->request->getGet('tab') ?: 'security'));
-        if (!in_array($tab, ['security', 'bans', 'smtp', 'backups', 'audit', 'logs'], true)) {
+        if (!in_array($tab, ['security', 'bans', 'smtp', 'backups', 'audit', 'logs', 'maintenance'], true)) {
             $tab = 'security';
         }
 
@@ -117,6 +118,10 @@ class AdminController extends BaseController
         $nginxCfg = config('Nginx');
         $geoipDbExists = is_file($nginxCfg->geoipDatabasePath);
 
+        // 8. Datos de Mantenimiento del Sistema
+        $maintenanceManager = new MaintenanceManager();
+        $maintenanceStats   = $maintenanceManager->getOverviewStats();
+
         $data = [
             'title'            => 'Administración',
             'activeMenu'       => $activeMenu,
@@ -148,7 +153,12 @@ class AdminController extends BaseController
             'nginxLog'         => $nginxLog,
             'selectedType'     => $logType,
             'selectedHost'     => $domainFilter,
-            'extraScripts'     => ['assets/js/backups-manager.js', 'assets/js/logs-monitor.js'],
+            'maintenanceStats' => $maintenanceStats,
+            'extraScripts'     => [
+                'assets/js/backups-manager.js',
+                'assets/js/logs-monitor.js',
+                'assets/js/maintenance-manager.js',
+            ],
         ];
 
         return view('template/header', $data)
@@ -571,6 +581,109 @@ class AdminController extends BaseController
 
         return redirect()->to(base_url('admin?tab=bans'))
             ->with('success', 'Base de datos MaxMind GeoLite2 descargada y lista para su uso.');
+    }
+
+    // ---------------------------------------------------------------------
+    // ACCIONES DE MANTENIMIENTO DEL SISTEMA
+    // ---------------------------------------------------------------------
+
+    /**
+     * Limpia las sesiones de usuario en disco (preservando la sesión activa del admin).
+     */
+    public function clearSessions(): ResponseInterface
+    {
+        $mode = $this->request->getPost('mode') === 'expired';
+        $manager = new MaintenanceManager();
+        $result = $manager->clearSessions($mode, true);
+
+        $msg = $mode
+            ? "Sesiones expiradas eliminadas ({$result['deleted']} archivos). Espacio liberado: {$result['freed_human']}."
+            : "Todas las sesiones inactivas han sido eliminadas ({$result['deleted']} archivos). Tu sesión actual permanece protegida.";
+
+        return redirect()->to(base_url('admin?tab=maintenance'))->with('success', $msg);
+    }
+
+    /**
+     * Limpia la memoria caché del framework, limitadores de tasa y reinicia OPcache.
+     */
+    public function clearCache(): ResponseInterface
+    {
+        $manager = new MaintenanceManager();
+        $result = $manager->clearCache();
+
+        $msg = "Caché del sistema vaciada con éxito ({$result['deleted_files']} archivos). Espacio liberado: {$result['freed_human']}.";
+        if ($result['opcache_reset']) {
+            $msg .= " OPcache reiniciado.";
+        }
+
+        return redirect()->to(base_url('admin?tab=maintenance'))->with('success', $msg);
+    }
+
+    /**
+     * Limpia los archivos de registro (logs de CodeIgniter) y volcados de depuración.
+     */
+    public function clearLogs(): ResponseInterface
+    {
+        $keepToday = $this->request->getPost('keep_today') === '1';
+        $manager = new MaintenanceManager();
+        $result = $manager->clearAppLogs($keepToday);
+
+        $msg = $keepToday
+            ? "Logs anteriores eliminados ({$result['deleted_files']} archivos). El registro del día en curso fue conservado. Espacio liberado: {$result['freed_human']}."
+            : "Todos los archivos de log de la aplicación han sido eliminados ({$result['deleted_files']} archivos). Espacio liberado: {$result['freed_human']}.";
+
+        return redirect()->to(base_url('admin?tab=maintenance'))->with('success', $msg);
+    }
+
+    /**
+     * Limpia o purga eventos de la tabla de auditoría.
+     */
+    public function clearAuditLogs(): ResponseInterface
+    {
+        $mode = (string) $this->request->getPost('mode');
+        $days = (int) $this->request->getPost('days');
+        if (!in_array($mode, ['older_than', 'all'], true)) {
+            $mode = 'older_than';
+            $days = 30;
+        }
+
+        $manager = new MaintenanceManager();
+        $result = $manager->clearAuditLogs($mode, $days > 0 ? $days : 30);
+
+        $msg = ($result['mode'] === 'older_than')
+            ? "Se eliminaron {$result['deleted_rows']} registros de auditoría anteriores a {$days} días."
+            : "Registro histórico de auditoría vaciado por completo ({$result['deleted_rows']} registros eliminados).";
+
+        return redirect()->to(base_url('admin?tab=maintenance'))->with('success', $msg);
+    }
+
+    /**
+     * Optimiza y compacta la base de datos SQLite (VACUUM).
+     */
+    public function optimizeDatabase(): ResponseInterface
+    {
+        $manager = new MaintenanceManager();
+        $result = $manager->optimizeDatabase();
+
+        return redirect()->to(base_url('admin?tab=maintenance'))
+            ->with('success', "Base de datos SQLite compactada y optimizada con éxito (VACUUM). Espacio liberado: {$result['freed_human']}.");
+    }
+
+    /**
+     * Ejecuta el mantenimiento integral (Caché + Sesiones inactivas + Logs anteriores).
+     */
+    public function runFullMaintenance(): ResponseInterface
+    {
+        $keepTodayLogs       = $this->request->getPost('keep_today_logs') !== '0';
+        $onlyExpiredSessions = $this->request->getPost('only_expired_sessions') === '1';
+
+        $manager = new MaintenanceManager();
+        $result  = $manager->runFullMaintenance($keepTodayLogs, $onlyExpiredSessions);
+
+        $msg = "Mantenimiento general completado con éxito. Espacio total liberado: {$result['total_freed_human']}. " .
+               "(Caché: {$result['cache']['freed_human']}, Sesiones: {$result['sessions']['freed_human']}, Logs: {$result['logs']['freed_human']}).";
+
+        return redirect()->to(base_url('admin?tab=maintenance'))->with('success', $msg);
     }
 }
 

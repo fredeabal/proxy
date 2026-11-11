@@ -253,7 +253,7 @@ $currentGeoipMode = $geoipMode ?? 'blocklist';
     <div class="round-32 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle flex-shrink-0">
       <i class="ti ti-shield-lock fs-5"></i>
     </div>
-    <h5 class="card-title fw-semibold mb-0">Lista Negra Activa</h5>
+    <h5 class="card-title fw-semibold mb-0">Lista Negra Activa (IPs Bloqueadas)</h5>
   </div>
 
   <?php if (!empty($bannedList)): ?>

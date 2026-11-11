@@ -567,10 +567,41 @@ a.badge.bg-danger-subtle:focus {
 [data-bs-theme="dark"] .dropdown-item:not(.text-danger):not(.text-warning):not(.text-success):not(.text-info):not(.text-primary):not(.text-secondary):not(.text-muted) {
     color: #a8b6c2 !important;
 }
-.dropdown-item:hover,
-.dropdown-item:focus {
-    background-color: var(--bs-primary-bg-subtle) !important;
+[data-bs-theme="light"] .dropdown-item:hover,
+[data-bs-theme="light"] .dropdown-item:focus {
+    background-color: rgba(243, 128, 32, 0.08) !important;
     color: var(--bs-primary) !important;
+}
+
+[data-bs-theme="dark"] .dropdown-item:hover,
+[data-bs-theme="dark"] .dropdown-item:focus {
+    background-color: rgba(255, 255, 255, 0.06) !important;
+    color: var(--bs-primary) !important;
+}
+
+.profile-dropdown .dropdown-item {
+    border-radius: 8px;
+    margin: 4px 12px;
+    width: auto;
+    transition: all 0.15s ease;
+}
+
+.dropdown-menu .badge {
+    border: none !important;
+    border-radius: 50rem !important;
+}
+
+/* --- Dropzone Avatar sin fondo con borde discontinuo gris como las cards --- */
+.dropzone-modern-wrapper {
+    background-color: transparent !important;
+    border-color: var(--bs-border-color, #dfe5ef) !important;
+    border-style: dashed !important;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+[data-bs-theme="dark"] .dropzone-modern-wrapper {
+    background-color: transparent !important;
+    border-color: #374853 !important;
 }
 
 /* --- Barra de búsqueda mejorada --- */

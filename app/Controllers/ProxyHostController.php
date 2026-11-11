@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Models\AuditLogModel;
 use App\Models\CertificateModel;
 use App\Models\ProxyHostModel;
+use App\Models\ProxyUpstreamModel;
 use App\Services\NginxManager;
 use App\Services\SSLManager;
 use App\Validation\ProxyHostRules;
@@ -13,16 +14,18 @@ use CodeIgniter\HTTP\ResponseInterface;
 class ProxyHostController extends BaseController
 {
     protected ProxyHostModel $proxyModel;
+    protected ProxyUpstreamModel $upstreamModel;
     protected CertificateModel $certModel;
     protected NginxManager $nginxManager;
     protected SSLManager $sslManager;
 
     public function __construct()
     {
-        $this->proxyModel   = new ProxyHostModel();
-        $this->certModel    = new CertificateModel();
-        $this->nginxManager = new NginxManager();
-        $this->sslManager   = new SSLManager(null, $this->certModel, $this->proxyModel, $this->nginxManager);
+        $this->proxyModel    = new ProxyHostModel();
+        $this->upstreamModel = new ProxyUpstreamModel();
+        $this->certModel     = new CertificateModel();
+        $this->nginxManager  = new NginxManager();
+        $this->sslManager    = new SSLManager(null, $this->certModel, $this->proxyModel, $this->nginxManager);
     }
 
     /**
@@ -50,6 +53,20 @@ class ProxyHostController extends BaseController
         }
 
         $proxies = $builder->orderBy('id', 'DESC')->findAll();
+
+        // Cargar upstreams para hosts con balanceo de carga / pool
+        $proxyIds = array_column($proxies, 'id');
+        $upstreamsByProxy = [];
+        if (!empty($proxyIds)) {
+            $allUpstreams = $this->upstreamModel->whereIn('proxy_host_id', $proxyIds)->findAll();
+            foreach ($allUpstreams as $ups) {
+                $upstreamsByProxy[$ups['proxy_host_id']][] = $ups;
+            }
+        }
+        foreach ($proxies as &$p) {
+            $p['upstreams'] = $upstreamsByProxy[$p['id']] ?? [];
+        }
+        unset($p);
 
         // Resumen métricas
         $totalCount    = $this->proxyModel->countAllResults(false);
@@ -83,24 +100,27 @@ class ProxyHostController extends BaseController
             'title'           => 'Nuevo Proxy Host',
             'activeMenu'      => 'proxy-hosts',
             'proxy'           => [
-                'id'                    => null,
-                'domain'                => '',
-                'domain_names'          => '',
-                'scheme'                => 'http',
-                'forward_host'          => '',
-                'forward_port'          => '',
-                'ssl_enabled'           => 0,
-                'websocket_enabled'     => 0,
-                'force_https'           => 0,
-                'enabled'               => 1,
-                'custom_headers'        => '',
-                'proxy_connect_timeout' => 60,
-                'proxy_read_timeout'    => 60,
-                'proxy_send_timeout'    => 60,
-                'client_max_body_size'  => 10,
-                'proxy_ssl_verify'      => 0,
-                'hsts_enabled'          => 0,
+                'id'                     => null,
+                'domain'                 => '',
+                'domain_names'           => '',
+                'scheme'                 => 'http',
+                'forward_host'           => '',
+                'forward_port'           => '',
+                'ssl_enabled'            => 0,
+                'websocket_enabled'      => 0,
+                'force_https'            => 0,
+                'enabled'                => 1,
+                'custom_headers'         => '',
+                'proxy_connect_timeout'  => 60,
+                'proxy_read_timeout'     => 60,
+                'proxy_send_timeout'     => 60,
+                'client_max_body_size'   => 10,
+                'proxy_ssl_verify'       => 0,
+                'hsts_enabled'           => 0,
+                'load_balancing_enabled' => 0,
+                'lb_algorithm'           => 'round_robin',
             ],
+            'upstreams'       => old('upstreams', []),
             'certificate'     => null,
             'certificates'    => $this->certModel->orderBy('domain', 'ASC')->findAll(),
             'allowedHeaders'  => array_values(array_unique(array_column(ProxyHostRules::ALLOWED_CUSTOM_HEADERS, 'name'))),
@@ -142,21 +162,46 @@ class ProxyHostController extends BaseController
         $sendTimeout    = $this->request->getPost('proxy_send_timeout');
         $maxBodySize    = $this->request->getPost('client_max_body_size');
 
+        $isLb = $this->request->getPost('load_balancing_enabled') ? 1 : 0;
+        $lbAlgorithm = strtolower(trim((string) $this->request->getPost('lb_algorithm')));
+        if (!in_array($lbAlgorithm, ['round_robin', 'least_conn', 'ip_hash'], true)) {
+            $lbAlgorithm = 'round_robin';
+        }
+
+        $parsedUpstreams = [];
+        if ($isLb) {
+            $lbResult = $this->parseUpstreamsFromRequest();
+            if ($lbResult['error'] !== null) {
+                return redirect()->back()->withInput()->with('error', $lbResult['error']);
+            }
+            $parsedUpstreams = $lbResult['servers'];
+        }
+
+        $forwardHost = trim((string) $this->request->getPost('forward_host'));
+        $forwardPort = (int) $this->request->getPost('forward_port');
+
+        if ($isLb && empty($forwardHost) && !empty($parsedUpstreams)) {
+            $forwardHost = $parsedUpstreams[0]['server_host'];
+            $forwardPort = $parsedUpstreams[0]['server_port'];
+        }
+
         $data = [
-            'domain'                => $primaryDomain,
-            'domain_names'          => $normalizedAliases,
-            'scheme'                => strtolower(trim((string) $this->request->getPost('scheme'))),
-            'forward_host'          => trim((string) $this->request->getPost('forward_host')),
-            'forward_port'          => (int) $this->request->getPost('forward_port'),
-            'websocket_enabled'     => $this->request->getPost('websocket_enabled') ? 1 : 0,
-            'enabled'               => $this->request->getPost('enabled') !== null ? ($this->request->getPost('enabled') ? 1 : 0) : 1,
-            'custom_headers'        => $rawHeaders !== '' ? $rawHeaders : null,
-            'proxy_connect_timeout' => ($connectTimeout !== null && $connectTimeout !== '') ? $connectTimeout : 60,
-            'proxy_read_timeout'    => ($readTimeout !== null && $readTimeout !== '') ? $readTimeout : 60,
-            'proxy_send_timeout'    => ($sendTimeout !== null && $sendTimeout !== '') ? $sendTimeout : 60,
-            'client_max_body_size'  => ($maxBodySize !== null && $maxBodySize !== '') ? $maxBodySize : 10,
-            'proxy_ssl_verify'      => $this->request->getPost('proxy_ssl_verify') ? 1 : 0,
-            'hsts_enabled'          => $this->request->getPost('hsts_enabled') ? 1 : 0,
+            'domain'                 => $primaryDomain,
+            'domain_names'           => $normalizedAliases,
+            'scheme'                 => strtolower(trim((string) $this->request->getPost('scheme'))),
+            'forward_host'           => $forwardHost,
+            'forward_port'           => $forwardPort,
+            'load_balancing_enabled' => $isLb,
+            'lb_algorithm'           => $lbAlgorithm,
+            'websocket_enabled'      => $this->request->getPost('websocket_enabled') ? 1 : 0,
+            'enabled'                => $this->request->getPost('enabled') !== null ? ($this->request->getPost('enabled') ? 1 : 0) : 1,
+            'custom_headers'         => $rawHeaders !== '' ? $rawHeaders : null,
+            'proxy_connect_timeout'  => ($connectTimeout !== null && $connectTimeout !== '') ? $connectTimeout : 60,
+            'proxy_read_timeout'     => ($readTimeout !== null && $readTimeout !== '') ? $readTimeout : 60,
+            'proxy_send_timeout'     => ($sendTimeout !== null && $sendTimeout !== '') ? $sendTimeout : 60,
+            'client_max_body_size'   => ($maxBodySize !== null && $maxBodySize !== '') ? $maxBodySize : 10,
+            'proxy_ssl_verify'       => $this->request->getPost('proxy_ssl_verify') ? 1 : 0,
+            'hsts_enabled'           => $this->request->getPost('hsts_enabled') ? 1 : 0,
         ];
 
         $ssl = $this->parseSslSelection($primaryDomain);
@@ -181,10 +226,18 @@ class ProxyHostController extends BaseController
         $newId = (int) $this->proxyModel->getInsertID();
         $data['id'] = $newId;
 
+        if ($isLb && !empty($parsedUpstreams)) {
+            $this->upstreamModel->syncForProxy($newId, $parsedUpstreams);
+            $data['upstreams'] = $parsedUpstreams;
+        }
+
         // Despliegue atómico en Nginx
         $nginxResult = $this->nginxManager->applyHost($data);
         if (!$nginxResult['success']) {
             // Rollback en base de datos si Nginx falla
+            if ($isLb) {
+                $this->upstreamModel->where('proxy_host_id', $newId)->delete();
+            }
             $this->proxyModel->delete($newId);
 
             AuditLogModel::log(
@@ -198,9 +251,12 @@ class ProxyHostController extends BaseController
         }
 
         // Registro en auditoría
+        $targetDesc = $isLb 
+            ? "Upstream [{$lbAlgorithm}] (" . count($parsedUpstreams) . " servidores)"
+            : "{$data['scheme']}://{$data['forward_host']}:{$data['forward_port']}";
         AuditLogModel::log(
             'proxy_create',
-            "Creado y desplegado Proxy Host [ID: {$newId}] {$data['domain']} -> {$data['scheme']}://{$data['forward_host']}:{$data['forward_port']}"
+            "Creado y desplegado Proxy Host [ID: {$newId}] {$data['domain']} -> {$targetDesc}"
         );
 
         // Emisión de certificado Let's Encrypt (opción "Solicitar nuevo" del paso SSL)
@@ -237,10 +293,13 @@ class ProxyHostController extends BaseController
             return $this->doesCertificateCoverDomain((string) $cert['domain'], $hostDomain);
         }));
 
+        $upstreams = $this->upstreamModel->getForProxy($id);
+
         $data = [
             'title'           => 'Editar Proxy Host',
             'activeMenu'      => 'proxy-hosts',
             'proxy'           => $proxy,
+            'upstreams'       => old('upstreams', $upstreams),
             'certificate'     => $certificate,
             'certificates'    => $matchingCertificates,
             'allowedHeaders'  => array_values(array_unique(array_column(ProxyHostRules::ALLOWED_CUSTOM_HEADERS, 'name'))),
@@ -289,22 +348,47 @@ class ProxyHostController extends BaseController
         $sendTimeout    = $this->request->getPost('proxy_send_timeout');
         $maxBodySize    = $this->request->getPost('client_max_body_size');
 
+        $isLb = $this->request->getPost('load_balancing_enabled') ? 1 : 0;
+        $lbAlgorithm = strtolower(trim((string) $this->request->getPost('lb_algorithm')));
+        if (!in_array($lbAlgorithm, ['round_robin', 'least_conn', 'ip_hash'], true)) {
+            $lbAlgorithm = 'round_robin';
+        }
+
+        $parsedUpstreams = [];
+        if ($isLb) {
+            $lbResult = $this->parseUpstreamsFromRequest();
+            if ($lbResult['error'] !== null) {
+                return redirect()->back()->withInput()->with('error', $lbResult['error']);
+            }
+            $parsedUpstreams = $lbResult['servers'];
+        }
+
+        $forwardHost = trim((string) $this->request->getPost('forward_host'));
+        $forwardPort = (int) $this->request->getPost('forward_port');
+
+        if ($isLb && empty($forwardHost) && !empty($parsedUpstreams)) {
+            $forwardHost = $parsedUpstreams[0]['server_host'];
+            $forwardPort = $parsedUpstreams[0]['server_port'];
+        }
+
         $data = [
-            'id'                    => $id,
-            'domain'                => $primaryDomain,
-            'domain_names'          => $normalizedAliases,
-            'scheme'                => strtolower(trim((string) $this->request->getPost('scheme'))),
-            'forward_host'          => trim((string) $this->request->getPost('forward_host')),
-            'forward_port'          => (int) $this->request->getPost('forward_port'),
-            'websocket_enabled'     => $this->request->getPost('websocket_enabled') ? 1 : 0,
-            'enabled'               => $this->request->getPost('enabled') !== null ? ($this->request->getPost('enabled') ? 1 : 0) : 0,
-            'custom_headers'        => $rawHeaders !== '' ? $rawHeaders : null,
-            'proxy_connect_timeout' => ($connectTimeout !== null && $connectTimeout !== '') ? $connectTimeout : ($existing['proxy_connect_timeout'] ?? 60),
-            'proxy_read_timeout'    => ($readTimeout !== null && $readTimeout !== '') ? $readTimeout : ($existing['proxy_read_timeout'] ?? 60),
-            'proxy_send_timeout'    => ($sendTimeout !== null && $sendTimeout !== '') ? $sendTimeout : ($existing['proxy_send_timeout'] ?? 60),
-            'client_max_body_size'  => ($maxBodySize !== null && $maxBodySize !== '') ? $maxBodySize : ($existing['client_max_body_size'] ?? 10),
-            'proxy_ssl_verify'      => $this->request->getPost('proxy_ssl_verify') ? 1 : 0,
-            'hsts_enabled'          => $this->request->getPost('hsts_enabled') ? 1 : 0,
+            'id'                     => $id,
+            'domain'                 => $primaryDomain,
+            'domain_names'           => $normalizedAliases,
+            'scheme'                 => strtolower(trim((string) $this->request->getPost('scheme'))),
+            'forward_host'           => $forwardHost,
+            'forward_port'           => $forwardPort,
+            'load_balancing_enabled' => $isLb,
+            'lb_algorithm'           => $lbAlgorithm,
+            'websocket_enabled'      => $this->request->getPost('websocket_enabled') ? 1 : 0,
+            'enabled'                => $this->request->getPost('enabled') !== null ? ($this->request->getPost('enabled') ? 1 : 0) : 0,
+            'custom_headers'         => $rawHeaders !== '' ? $rawHeaders : null,
+            'proxy_connect_timeout'  => ($connectTimeout !== null && $connectTimeout !== '') ? $connectTimeout : ($existing['proxy_connect_timeout'] ?? 60),
+            'proxy_read_timeout'     => ($readTimeout !== null && $readTimeout !== '') ? $readTimeout : ($existing['proxy_read_timeout'] ?? 60),
+            'proxy_send_timeout'     => ($sendTimeout !== null && $sendTimeout !== '') ? $sendTimeout : ($existing['proxy_send_timeout'] ?? 60),
+            'client_max_body_size'   => ($maxBodySize !== null && $maxBodySize !== '') ? $maxBodySize : ($existing['client_max_body_size'] ?? 10),
+            'proxy_ssl_verify'       => $this->request->getPost('proxy_ssl_verify') ? 1 : 0,
+            'hsts_enabled'           => $this->request->getPost('hsts_enabled') ? 1 : 0,
         ];
 
         $ssl = $this->parseSslSelection($primaryDomain);
@@ -332,12 +416,22 @@ class ProxyHostController extends BaseController
             $this->proxyModel->update($id, ['custom_headers' => $normalizedHeaders]);
         }
 
+        $previousUpstreams = $this->upstreamModel->getForProxy($id);
+        if ($isLb) {
+            $this->upstreamModel->syncForProxy($id, $parsedUpstreams);
+            $data['upstreams'] = $parsedUpstreams;
+        } else {
+            $this->upstreamModel->where('proxy_host_id', $id)->delete();
+            $data['upstreams'] = [];
+        }
+
         // Aplicación atómica en Nginx
         $nginxResult = $this->nginxManager->applyHost($data);
         if (!$nginxResult['success']) {
             // Revertir en base de datos al estado anterior
             $this->proxyModel->update($id, $existing);
-            // Intentar restaurar configuración previa en Nginx
+            $this->upstreamModel->syncForProxy($id, $previousUpstreams);
+            $existing['upstreams'] = $previousUpstreams;
             $this->nginxManager->applyHost($existing);
 
             AuditLogModel::log(
@@ -351,9 +445,12 @@ class ProxyHostController extends BaseController
         }
 
         // Registro en auditoría
+        $targetDesc = $isLb 
+            ? "Upstream [{$lbAlgorithm}] (" . count($parsedUpstreams) . " servidores)"
+            : "{$data['scheme']}://{$data['forward_host']}:{$data['forward_port']}";
         AuditLogModel::log(
             'proxy_update',
-            "Actualizado y desplegado Proxy Host [ID: {$id}] {$data['domain']} -> {$data['scheme']}://{$data['forward_host']}:{$data['forward_port']}"
+            "Actualizado y desplegado Proxy Host [ID: {$id}] {$data['domain']} -> {$targetDesc}"
         );
 
         // Emisión de certificado Let's Encrypt (opción "Solicitar nuevo" del paso SSL)
@@ -426,6 +523,146 @@ class ProxyHostController extends BaseController
     }
 
     /**
+     * Realiza un Health Check ultra ligero vía AJAX hacia el backend de destino o upstreams.
+     */
+    public function healthCheck(int $id): ResponseInterface
+    {
+        $proxy = $this->proxyModel->find($id);
+        if (!$proxy) {
+            return $this->response->setJSON([
+                'success' => false,
+                'status'  => 'offline',
+                'detail'  => 'Host no encontrado',
+            ]);
+        }
+
+        $targets = [];
+        if (!empty($proxy['load_balancing_enabled'])) {
+            $upstreams = $this->upstreamModel->getForProxy($id);
+            foreach ($upstreams as $up) {
+                $targets[] = [
+                    'scheme' => $proxy['scheme'] ?? 'http',
+                    'host'   => $up['server_host'],
+                    'port'   => (int) $up['server_port'],
+                ];
+            }
+        }
+
+        if (empty($targets)) {
+            $targets[] = [
+                'scheme' => $proxy['scheme'] ?? 'http',
+                'host'   => $proxy['forward_host'],
+                'port'   => (int) $proxy['forward_port'],
+            ];
+        }
+
+        $startTime    = microtime(true);
+        $totalTargets = count($targets);
+        $onlineCount  = 0;
+        $bestLatency  = 999999;
+        $lastDetail   = '';
+        $httpCode     = 0;
+
+        foreach ($targets as $t) {
+            $h = $t['host'];
+            $p = (int) $t['port'];
+
+            if ($p === 80 || $p === 8080) {
+                $sch = 'http';
+            } elseif ($p === 443 || $p === 8443) {
+                $sch = 'https';
+            } else {
+                $sch = strtolower($t['scheme'] ?: 'http');
+            }
+
+            $ch = curl_init("{$sch}://{$h}:{$p}/");
+            curl_setopt_array($ch, [
+                CURLOPT_NOBODY         => true,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT => 1.5,
+                CURLOPT_TIMEOUT        => 1.5,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS      => 2,
+                CURLOPT_USERAGENT      => 'NetCrew-HealthCheck/1.0',
+            ]);
+            curl_exec($ch);
+            $code  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $time  = (float) curl_getinfo($ch, CURLINFO_TOTAL_TIME);
+            $errNo = curl_errno($ch);
+            $errMsg = curl_error($ch);
+
+            $lat = round(($time > 0 ? $time : 0.05) * 1000);
+
+            if ($errNo === 0 && $code > 0 && $code < 500) {
+                $onlineCount++;
+                $httpCode = $code;
+                if ($lat < $bestLatency) {
+                    $bestLatency = $lat;
+                }
+            } else {
+                // Si cURL falla, prueba socket TCP directo
+                $fp = @fsockopen($h, $p, $sErr, $sMsg, 0.8);
+                if ($fp) {
+                    fclose($fp);
+                    $onlineCount++;
+                    if ($lat < $bestLatency) {
+                        $bestLatency = $lat;
+                    }
+                } else {
+                    $lastDetail = !empty($errMsg) ? $errMsg : ($sMsg ?: 'Conexión rechazada');
+                }
+            }
+        }
+
+        if ($bestLatency === 999999) {
+            $bestLatency = round((microtime(true) - $startTime) * 1000);
+        }
+
+        if ($totalTargets > 1) {
+            // Pool de múltiples servidores
+            if ($onlineCount === $totalTargets) {
+                // Ambos / todos responden bien -> Verde
+                $status   = 'online';
+                $isOnline = true;
+                $detail   = "Pool 100% operativo: {$onlineCount}/{$totalTargets} activos ({$bestLatency}ms)";
+            } elseif ($onlineCount > 0) {
+                // Solo responde uno -> Amarillo
+                $status   = 'warning';
+                $isOnline = true;
+                $detail   = "Parcial: {$onlineCount}/{$totalTargets} activo ({$bestLatency}ms)";
+            } else {
+                // No responde ninguno -> Rojo
+                $status   = 'offline';
+                $isOnline = false;
+                $detail   = "Caído: 0/{$totalTargets} activos (" . ($lastDetail ?: 'Sin respuesta') . ")";
+            }
+        } else {
+            // Destino único
+            if ($onlineCount > 0) {
+                $status   = 'online';
+                $isOnline = true;
+                $detail   = $httpCode > 0 ? "HTTP {$httpCode} ({$bestLatency}ms)" : "Puerto {$targets[0]['port']} activo ({$bestLatency}ms)";
+            } else {
+                $status   = 'offline';
+                $isOnline = false;
+                $detail   = $lastDetail ?: 'No responde / Conexión rechazada';
+            }
+        }
+
+        return $this->response->setJSON([
+            'success'    => true,
+            'id'         => $id,
+            'status'     => $status, // online | error | offline
+            'is_online'  => $isOnline,
+            'http_code'  => $httpCode,
+            'detail'     => $detail,
+            'latency_ms' => $bestLatency,
+        ]);
+    }
+
+    /**
      * Elimina un Proxy Host y remueve su configuración de Nginx.
      */
     public function delete(int $id): ResponseInterface
@@ -439,6 +676,7 @@ class ProxyHostController extends BaseController
         // Remover de Nginx primero
         $this->nginxManager->removeHost($id);
 
+        $this->upstreamModel->where('proxy_host_id', $id)->delete();
         $this->proxyModel->delete($id);
 
         AuditLogModel::log(
@@ -785,5 +1023,79 @@ class ProxyHostController extends BaseController
 
         return redirect()->to($redirectUrl)
             ->with('success', $result['message'] ?? 'Certificado SSL renovado con éxito.');
+    }
+
+    /**
+     * Parsea y valida los servidores backend para balanceo de carga desde la petición POST.
+     *
+     * @return array{error: ?string, servers: array}
+     */
+    protected function parseUpstreamsFromRequest(): array
+    {
+        $rawServers = $this->request->getPost('upstreams');
+        if (!is_array($rawServers) || empty($rawServers)) {
+            return [
+                'error'   => 'Debes configurar al menos un servidor cuando el balanceo de carga está habilitado.',
+                'servers' => [],
+            ];
+        }
+
+        $rawServers = array_slice($rawServers, 0, 2);
+        $rules = new ProxyHostRules();
+        $validatedServers = [];
+
+        foreach ($rawServers as $idx => $srv) {
+            $host = trim((string) ($srv['server_host'] ?? ''));
+            $port = (int) ($srv['server_port'] ?? 0);
+
+            // Permitir ignorar filas vacías (ej. segundo servidor no configurado)
+            if ($host === '') {
+                continue;
+            }
+
+            $hostError = null;
+            if (!$rules->valid_forward_host($host, $hostError)) {
+                return [
+                    'error'   => 'Servidor backend #' . ($idx + 1) . ": {$hostError}",
+                    'servers' => [],
+                ];
+            }
+
+            if ($port < 1 || $port > 65535) {
+                return [
+                    'error'   => 'Servidor backend #' . ($idx + 1) . ': El puerto debe estar entre 1 y 65535.',
+                    'servers' => [],
+                ];
+            }
+
+            $weight = isset($srv['weight']) && (int) $srv['weight'] > 0 ? min(100, (int) $srv['weight']) : 1;
+            $maxFails = isset($srv['max_fails']) && $srv['max_fails'] !== '' ? max(0, min(100, (int) $srv['max_fails'])) : 3;
+            $failTimeout = isset($srv['fail_timeout']) && (int) $srv['fail_timeout'] > 0 ? min(3600, (int) $srv['fail_timeout']) : 10;
+            $role = strtolower(trim((string) ($srv['role'] ?? '')));
+            $isBackup = ($role === 'backup' || !empty($srv['is_backup'])) ? 1 : 0;
+            $isDown = ($role === 'down' || !empty($srv['is_down'])) ? 1 : 0;
+
+            $validatedServers[] = [
+                'server_host'  => $host,
+                'server_port'  => $port,
+                'weight'       => $weight,
+                'max_fails'    => $maxFails,
+                'fail_timeout' => $failTimeout,
+                'is_backup'    => $isBackup,
+                'is_down'      => $isDown,
+            ];
+        }
+
+        if (empty($validatedServers)) {
+            return [
+                'error'   => 'Debes configurar al menos un servidor backend válido.',
+                'servers' => [],
+            ];
+        }
+
+        return [
+            'error'   => null,
+            'servers' => $validatedServers,
+        ];
     }
 }

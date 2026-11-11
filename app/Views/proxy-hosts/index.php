@@ -1,4 +1,22 @@
 <!-- Cabecera de Página -->
+<style>
+@keyframes healthSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.health-spinning {
+  animation: healthSpin 0.9s linear infinite;
+  display: inline-block;
+}
+.health-check-trigger {
+  cursor: pointer;
+  transition: transform 0.15s ease-in-out, opacity 0.15s ease-in-out;
+}
+.health-check-trigger:hover {
+  transform: scale(1.15);
+  opacity: 1 !important;
+}
+</style>
 <div class="page-header">
   <h4 class="page-header-title">Proxy Hosts</h4>
   <div class="page-header-actions">
@@ -101,13 +119,14 @@
             <th class="text-center">SSL</th>
             <th class="text-center">Redirect</th>
             <th class="text-center">WebSockets</th>
+            <th class="text-center">Estado</th>
             <th class="text-end pe-4" style="width: 50px;"></th>
           </tr>
         </thead>
         <tbody>
           <?php if (empty($proxies)): ?>
             <tr>
-              <td colspan="6" class="text-center py-5">
+              <td colspan="7" class="text-center py-5">
                 <div class="py-4">
                   <div class="round-50 d-inline-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle mb-3">
                     <i class="ti ti-world-off fs-7"></i>
@@ -126,15 +145,19 @@
                 $isLocalhost = in_array(strtolower($item['forward_host']), ['localhost', '127.0.0.1', '::1'], true) || str_starts_with($item['forward_host'], '127.');
               ?>
               <tr class="proxy-row" data-status="<?= $item['enabled'] ? 'active' : 'disabled' ?>" onclick="window.location.href='<?= base_url('proxy-hosts/edit/' . $item['id']) ?>'">
-                <!-- Dominio y Aliases -->
+                <!-- Dominio y Aliases con el Mundo (Health Check) al principio -->
                 <td class="ps-4">
                   <div class="d-flex align-items-center gap-2">
-                    <a href="<?= base_url('proxy-hosts/toggle/' . $item['id']) ?>" 
-                       onclick="event.stopPropagation();"
-                       class="round-32 d-flex align-items-center justify-content-center <?= $item['enabled'] ? 'bg-success-subtle text-success border border-success' : 'bg-danger-subtle text-danger border border-danger' ?> rounded-circle text-decoration-none flex-shrink-0"
-                       title="<?= $item['enabled'] ? 'Activo (Clic para desactivar)' : 'Inactivo (Clic para activar)' ?>">
-                      <i class="ti ti-world fs-4"></i>
-                    </a>
+                    <button type="button" 
+                            class="round-32 d-flex align-items-center justify-content-center bg-body-tertiary text-muted border rounded-circle flex-shrink-0 health-badge-<?= $item['id'] ?> p-0"
+                            style="cursor: pointer; transition: all 0.2s;"
+                            onclick="event.stopPropagation(); checkHostHealth(<?= $item['id'] ?>, true);"
+                            data-host-id="<?= $item['id'] ?>"
+                            data-bs-toggle="tooltip"
+                            data-bs-placement="top"
+                            data-bs-title="Health Check: Pendiente (Clic para comprobar)">
+                      <i class="ti ti-world fs-4 health-icon-<?= $item['id'] ?>"></i>
+                    </button>
                     <div>
                       <div class="fw-bold text-dark fs-3 d-flex align-items-center gap-1">
                         <?= esc($item['domain']) ?>
@@ -157,14 +180,24 @@
                 <!-- Destino -->
                 <td>
                   <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-secondary-subtle text-secondary font-monospace text-uppercase">
+                    <span class="badge bg-secondary-subtle text-secondary font-monospace text-uppercase align-self-center">
                       <?= esc($item['scheme']) ?>
                     </span>
-                    <span class="fw-semibold font-monospace">
-                      <?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?>
-                    </span>
-                    <?php if ($isLocalhost): ?>
-                      <span class="badge bg-secondary-subtle text-secondary border border-secondary fs-1" title="Destino local en el mismo host">local</span>
+                    <?php if (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
+                      <div class="d-flex flex-column" style="gap: 1px;">
+                        <?php foreach ($item['upstreams'] as $srv): ?>
+                          <span class="font-monospace text-body fw-medium" style="font-size: 0.78rem; line-height: 1.25;">
+                            <?= esc($srv['server_host']) ?>:<?= esc($srv['server_port']) ?>
+                          </span>
+                        <?php endforeach; ?>
+                      </div>
+                    <?php else: ?>
+                      <span class="fw-semibold font-monospace">
+                        <?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?>
+                      </span>
+                      <?php if ($isLocalhost): ?>
+                        <span class="badge bg-secondary-subtle text-secondary border border-secondary fs-1" title="Destino local en el mismo host">local</span>
+                      <?php endif; ?>
                     <?php endif; ?>
                   </div>
                 </td>
@@ -204,6 +237,24 @@
                   <?php endif; ?>
                 </td>
 
+                <!-- Estado -->
+                <td class="text-center" onclick="event.stopPropagation();">
+                  <a href="<?= base_url('proxy-hosts/toggle/' . $item['id']) ?>" 
+                     onclick="toggleProxyStatus(event, <?= $item['id'] ?>);"
+                     class="text-decoration-none status-badge-link-<?= $item['id'] ?>"
+                     title="Clic para cambiar estado">
+                    <?php if ($item['enabled']): ?>
+                      <span class="badge badge-table bg-success-subtle text-success border border-success status-badge-<?= $item['id'] ?>">
+                        <i class="ti ti-check"></i> Activo
+                      </span>
+                    <?php else: ?>
+                      <span class="badge badge-table bg-secondary-subtle text-secondary border border-secondary status-badge-<?= $item['id'] ?>">
+                        <i class="ti ti-x"></i> Inactivo
+                      </span>
+                    <?php endif; ?>
+                  </a>
+                </td>
+
                 <!-- Acciones (Menú de 3 puntos estilo DeCA) -->
                 <td class="text-end pe-3" onclick="event.stopPropagation();">
                   <div class="dropdown dropstart d-inline-block">
@@ -227,8 +278,13 @@
                         </a>
                       </li>
                       <li>
-                        <a class="dropdown-item d-flex align-items-center gap-2" href="<?= base_url('proxy-hosts/toggle/' . $item['id']) ?>">
-                          <i class="ti <?= $item['enabled'] ? 'ti-ban' : 'ti-check' ?> fs-4"></i> <?= $item['enabled'] ? 'Desactivar' : 'Activar' ?>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="javascript:void(0)" onclick="checkHostHealth(<?= $item['id'] ?>, true)">
+                          <i class="ti ti-activity fs-4"></i> Health Check
+                        </a>
+                      </li>
+                      <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2 menu-toggle-btn-<?= $item['id'] ?>" href="<?= base_url('proxy-hosts/toggle/' . $item['id']) ?>" onclick="toggleProxyStatus(event, <?= $item['id'] ?>);">
+                          <i class="ti <?= $item['enabled'] ? 'ti-ban' : 'ti-check' ?> fs-4 menu-toggle-icon-<?= $item['id'] ?>"></i> <span class="menu-toggle-label-<?= $item['id'] ?>"><?= $item['enabled'] ? 'Desactivar' : 'Activar' ?></span>
                         </a>
                       </li>
                       <?php if ($item['ssl_enabled']): ?>
@@ -253,7 +309,7 @@
               </tr>
             <?php endforeach; ?>
             <tr id="noResultsRow" style="display: none;">
-              <td colspan="6" class="text-center py-4 text-muted">
+              <td colspan="7" class="text-center py-4 text-muted">
                 <i class="ti ti-search-off me-1"></i> No se encontraron coincidencias para la búsqueda.
               </td>
             </tr>
@@ -308,15 +364,18 @@
            style="cursor: pointer;"
            onclick="window.location.href='<?= base_url('proxy-hosts/edit/' . $item['id']) ?>'">
         <div class="card-body p-3">
-          <!-- Cabecera: Mundo al lado del dominio + Chevron a la derecha -->
+          <!-- Cabecera: Mundo (Health Check) al principio + Dominio + Acciones -->
           <div class="d-flex justify-content-between align-items-center mb-2">
             <div class="d-flex align-items-center gap-2 overflow-hidden">
-              <a href="<?= base_url('proxy-hosts/toggle/' . $item['id']) ?>" 
-                 onclick="event.stopPropagation();"
-                 class="round-32 rounded-circle <?= $item['enabled'] ? 'bg-success-subtle text-success border border-success' : 'bg-danger-subtle text-danger border border-danger' ?> d-flex align-items-center justify-content-center flex-shrink-0 text-decoration-none"
-                 title="<?= $item['enabled'] ? 'Activo (Toca para desactivar)' : 'Inactivo (Toca para activar)' ?>">
-                <i class="ti ti-world fs-5"></i>
-              </a>
+              <button type="button" 
+                      class="round-32 rounded-circle bg-body-tertiary text-muted border d-flex align-items-center justify-content-center flex-shrink-0 health-badge-<?= $item['id'] ?> p-0"
+                      onclick="event.stopPropagation(); checkHostHealth(<?= $item['id'] ?>, true);"
+                      data-host-id="<?= $item['id'] ?>"
+                      data-bs-toggle="tooltip"
+                      data-bs-placement="top"
+                      data-bs-title="Health Check: Pendiente (Toca para comprobar)">
+                <i class="ti ti-world fs-5 health-icon-<?= $item['id'] ?>"></i>
+              </button>
               <div class="overflow-hidden">
                 <div class="d-flex align-items-center gap-1 text-truncate">
                   <h6 class="fw-bold mb-0 text-body fs-4 text-truncate"><?= esc($item['domain']) ?></h6>
@@ -359,8 +418,13 @@
                   </a>
                 </li>
                 <li>
-                  <a class="dropdown-item d-flex align-items-center gap-2" href="<?= base_url('proxy-hosts/toggle/' . $item['id']) ?>">
-                    <i class="ti <?= $item['enabled'] ? 'ti-ban' : 'ti-check' ?> fs-4"></i> <?= $item['enabled'] ? 'Desactivar' : 'Activar' ?>
+                  <a class="dropdown-item d-flex align-items-center gap-2" href="javascript:void(0)" onclick="checkHostHealth(<?= $item['id'] ?>, true)">
+                    <i class="ti ti-activity fs-4"></i> Health Check
+                  </a>
+                </li>
+                <li>
+                  <a class="dropdown-item d-flex align-items-center gap-2 menu-toggle-btn-<?= $item['id'] ?>" href="<?= base_url('proxy-hosts/toggle/' . $item['id']) ?>" onclick="toggleProxyStatus(event, <?= $item['id'] ?>);">
+                    <i class="ti <?= $item['enabled'] ? 'ti-ban' : 'ti-check' ?> fs-4 menu-toggle-icon-<?= $item['id'] ?>"></i> <span class="menu-toggle-label-<?= $item['id'] ?>"><?= $item['enabled'] ? 'Desactivar' : 'Activar' ?></span>
                   </a>
                 </li>
                 <?php if ($item['ssl_enabled']): ?>
@@ -387,7 +451,17 @@
           <div class="text-muted small mt-2">
             <div>
               <strong>Destino:</strong> 
-              <span class="font-monospace text-body"><?= esc($item['scheme']) ?>://<?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?></span>
+              <?php if (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
+                <div class="d-inline-flex flex-column align-top ms-1" style="gap: 1px;">
+                  <?php foreach ($item['upstreams'] as $srv): ?>
+                    <span class="font-monospace text-body fw-medium" style="font-size: 0.78rem; line-height: 1.25;">
+                      <?= esc($item['scheme']) ?>://<?= esc($srv['server_host']) ?>:<?= esc($srv['server_port']) ?>
+                    </span>
+                  <?php endforeach; ?>
+                </div>
+              <?php else: ?>
+                <span class="font-monospace text-body"><?= esc($item['scheme']) ?>://<?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?></span>
+              <?php endif; ?>
             </div>
             <div class="mt-1">
               <strong>SSL:</strong> 
@@ -400,6 +474,23 @@
             <div class="mt-1">
               <strong>WebSockets:</strong> 
               <span class="<?= $item['websocket_enabled'] ? 'text-body' : 'text-muted' ?>"><?= $item['websocket_enabled'] ? 'Sí' : 'No' ?></span>
+            </div>
+            <div class="mt-1 d-flex align-items-center justify-content-between">
+              <strong>Estado:</strong> 
+              <a href="<?= base_url('proxy-hosts/toggle/' . $item['id']) ?>" 
+                 onclick="event.stopPropagation(); toggleProxyStatus(event, <?= $item['id'] ?>);"
+                 class="text-decoration-none status-badge-link-<?= $item['id'] ?>"
+                 title="Clic para cambiar estado">
+                <?php if ($item['enabled']): ?>
+                  <span class="badge badge-table bg-success-subtle text-success border border-success status-badge-<?= $item['id'] ?>">
+                    <i class="ti ti-check"></i> Activo
+                  </span>
+                <?php else: ?>
+                  <span class="badge badge-table bg-secondary-subtle text-secondary border border-secondary status-badge-<?= $item['id'] ?>">
+                    <i class="ti ti-x"></i> Inactivo
+                  </span>
+                <?php endif; ?>
+              </a>
             </div>
           </div>
         </div>
@@ -444,14 +535,211 @@ function confirmDelete(id, domain) {
   });
 }
 
+// --- Health Check & AJAX Toggle Management ---
+const healthCache = {};
+const healthQueue = [];
+let isQueueRunning = false;
+
+function enqueueHealthCheck(id) {
+  if (!healthQueue.includes(id) && !healthCache[id]) {
+    healthQueue.push(id);
+    if (!isQueueRunning) {
+      processHealthQueue();
+    }
+  }
+}
+
+function processHealthQueue() {
+  if (healthQueue.length === 0) {
+    isQueueRunning = false;
+    return;
+  }
+  isQueueRunning = true;
+  const id = healthQueue.shift();
+  checkHostHealth(id, false).finally(() => {
+    setTimeout(processHealthQueue, 150); // Carga mínima: 150ms entre comprobaciones secuenciales
+  });
+}
+
+function checkHostHealth(id, manual = false) {
+  const badges = document.querySelectorAll('.health-badge-' + id);
+  const icons = document.querySelectorAll('.health-icon-' + id);
+
+  if (!manual && healthCache[id]) {
+    applyHealthUI(id, healthCache[id]);
+    return Promise.resolve(healthCache[id]);
+  }
+
+  // Estado cargando
+  badges.forEach(b => {
+    b.className = 'round-32 rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 p-0 border bg-body-tertiary text-primary border-primary-subtle health-badge-' + id;
+    updateElementTooltip(b, 'Comprobando salud del backend...');
+  });
+  icons.forEach(el => {
+    el.className = 'ti ti-loader-2 fs-4 text-primary health-spinning health-icon-' + id;
+  });
+
+  return fetch('<?= base_url('proxy-hosts/health-check') ?>/' + id, {
+    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  })
+  .then(res => res.json())
+  .then(data => {
+    healthCache[id] = data;
+    applyHealthUI(id, data);
+    return data;
+  })
+  .catch(err => {
+    const errorData = { status: 'offline', detail: 'Sin respuesta / Error de red' };
+    healthCache[id] = errorData;
+    applyHealthUI(id, errorData);
+    return errorData;
+  });
+}
+
+function applyHealthUI(id, data) {
+  const badges = document.querySelectorAll('.health-badge-' + id);
+  const icons = document.querySelectorAll('.health-icon-' + id);
+
+  let badgeClass = 'round-32 rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 p-0 border health-badge-' + id;
+  let iconClass = 'ti fs-4 health-icon-' + id;
+  let tooltipText = '';
+
+  if (data.status === 'online') {
+    badgeClass += ' bg-success-subtle text-success border-success';
+    iconClass += ' ti-world text-success';
+    tooltipText = 'Online: ' + (data.detail || 'Operativo');
+  } else if (data.status === 'warning' || data.status === 'error') {
+    badgeClass += ' bg-warning-subtle text-warning border-warning';
+    iconClass += ' ti-world text-warning';
+    tooltipText = (data.status === 'warning' ? 'Atención: ' : 'Alerta: ') + (data.detail || 'Error en respuesta');
+  } else {
+    badgeClass += ' bg-danger-subtle text-danger border-danger';
+    iconClass += ' ti-world-off text-danger';
+    tooltipText = 'Offline: ' + (data.detail || 'Inaccesible');
+  }
+
+  badges.forEach(b => {
+    b.className = badgeClass;
+    updateElementTooltip(b, tooltipText);
+  });
+  icons.forEach(el => {
+    el.className = iconClass;
+  });
+}
+
+function updateElementTooltip(element, title) {
+  element.setAttribute('data-bs-original-title', title);
+  element.setAttribute('data-bs-title', title);
+  element.setAttribute('title', title);
+
+  if (window.bootstrap && window.bootstrap.Tooltip) {
+    let inst = window.bootstrap.Tooltip.getInstance(element);
+    if (!inst) {
+      inst = new window.bootstrap.Tooltip(element);
+    }
+    if (inst.setContent) {
+      inst.setContent({ '.tooltip-inner': title });
+    }
+  }
+}
+
+function toggleProxyStatus(event, id) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const badges = document.querySelectorAll('.status-badge-' + id);
+  const links = document.querySelectorAll('.status-badge-link-' + id);
+  const menuIcons = document.querySelectorAll('.menu-toggle-icon-' + id);
+  const menuLabels = document.querySelectorAll('.menu-toggle-label-' + id);
+
+  links.forEach(l => l.style.pointerEvents = 'none');
+  badges.forEach(b => {
+    b.innerHTML = '<i class="ti ti-loader-2 health-spinning"></i> Guardando...';
+  });
+
+  fetch('<?= base_url('proxy-hosts/toggle') ?>/' + id, {
+    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  })
+  .then(res => res.json())
+  .then(data => {
+    links.forEach(l => l.style.pointerEvents = '');
+    if (data.success) {
+      const isEnabled = data.enabled;
+
+      badges.forEach(b => {
+        b.className = 'badge badge-table border status-badge-' + id + ' ' + 
+          (isEnabled ? 'bg-success-subtle text-success border-success' : 'bg-secondary-subtle text-secondary border-secondary');
+        b.innerHTML = isEnabled ? '<i class="ti ti-check"></i> Activo' : '<i class="ti ti-x"></i> Inactivo';
+      });
+
+      menuIcons.forEach(icon => {
+        icon.className = 'ti ' + (isEnabled ? 'ti-ban' : 'ti-check') + ' fs-4 menu-toggle-icon-' + id;
+      });
+      menuLabels.forEach(label => {
+        label.textContent = isEnabled ? 'Desactivar' : 'Activar';
+      });
+
+      // Actualizar atributo data-status para filtros
+      document.querySelectorAll('tr.proxy-row, .proxy-card-item').forEach(row => {
+        if (row.querySelector('.status-badge-' + id)) {
+          row.setAttribute('data-status', isEnabled ? 'active' : 'disabled');
+        }
+      });
+
+      // Actualizar contador métrico si existe
+      const metricEl = document.getElementById('metricActiveCount');
+      if (metricEl) {
+        let cur = parseInt(metricEl.textContent.trim(), 10) || 0;
+        metricEl.textContent = isEnabled ? (cur + 1) : Math.max(0, cur - 1);
+      }
+
+      // Re-verificar salud
+      checkHostHealth(id, true);
+    } else {
+      if (window.Swal) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error de Nginx',
+          text: data.message || 'No se pudo alternar el estado.',
+          confirmButtonText: 'Entendido'
+        });
+      } else {
+        alert(data.message || 'Error al cambiar estado.');
+      }
+      location.reload();
+    }
+  })
+  .catch(err => {
+    links.forEach(l => l.style.pointerEvents = '');
+    location.reload();
+  });
+}
+
 // Búsqueda y filtrado en tiempo real sin botón
 document.addEventListener("DOMContentLoaded", function() {
+  // Inicializar tooltips de Bootstrap
+  if (window.bootstrap && window.bootstrap.Tooltip) {
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+      new window.bootstrap.Tooltip(el);
+    });
+  }
+
   // Soporte universal para dropdowns con estrategia fixed (evita cortes de bordes en tablas y cards)
   if (window.bootstrap && window.bootstrap.Dropdown) {
     document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(el => {
       new window.bootstrap.Dropdown(el, { popperConfig: (cfg) => Object.assign({}, cfg, { strategy: 'fixed' }) });
     });
   }
+
+  // Encolar Health Check automático con mínima carga (secuencial en segundo plano)
+  document.querySelectorAll('[data-host-id]').forEach(el => {
+    const hostId = el.getAttribute('data-host-id');
+    if (hostId) {
+      enqueueHealthCheck(parseInt(hostId, 10));
+    }
+  });
 
   const searchInput = document.getElementById('tableSearchInput');
   const statusSelect = document.getElementById('statusFilterSelect');

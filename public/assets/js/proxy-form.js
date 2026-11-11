@@ -7,7 +7,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     // Inicializar Select2 en selects del formulario si aún no están inicializados
     if (window.jQuery && jQuery.fn.select2) {
-      $('#scheme, #ssl_certificate').each(function () {
+      $('#scheme, #ssl_certificate, #load_balancing_enabled, #lb_algorithm, #upstreamsTableBody select.select2').each(function () {
         if (!$(this).data('select2')) {
           $(this).select2({ width: '100%', minimumResultsForSearch: Infinity });
         }
@@ -16,6 +16,7 @@
 
     initCertificateDomainFilter();
     initSslToggles();
+    initLoadBalancingToggles();
     initFormSubmits();
     initVhostEditor();
 
@@ -349,5 +350,49 @@
         }
       });
     }
+  }
+
+  /**
+   * Controla la alternancia entre destino único y balanceador de carga upstream (máximo 2 servidores).
+   */
+  function initLoadBalancingToggles() {
+    const lbSelect   = document.getElementById('load_balancing_enabled');
+    const singleCols = document.querySelectorAll('.single-target-col');
+    const lbCols     = document.querySelectorAll('.lb-target-col');
+    const fHost      = document.getElementById('forward_host');
+    const fPort      = document.getElementById('forward_port');
+    const up0Host    = document.getElementById('upstream_0_host');
+    const up0Port    = document.getElementById('upstream_0_port');
+
+    if (!lbSelect) return;
+
+    function updatePanels() {
+      const isLb = lbSelect.value === '1';
+
+      singleCols.forEach(col => col.classList.toggle('d-none', isLb));
+      lbCols.forEach(col => col.classList.toggle('d-none', !isLb));
+
+      if (fHost) fHost.required = !isLb;
+      if (fPort) fPort.required = !isLb;
+
+      if (isLb) {
+        if (window.jQuery && $('#lb_algorithm').data('select2')) {
+          $('#lb_algorithm').next('.select2-container').css('width', '100%');
+        }
+        // Sincronizar automáticamente el servidor 1 con lo que había en destino único si está vacío
+        if (up0Host && !up0Host.value.trim() && fHost && fHost.value.trim()) {
+          up0Host.value = fHost.value.trim();
+        }
+        if (up0Port && (!up0Port.value || up0Port.value === '80') && fPort && fPort.value) {
+          up0Port.value = fPort.value;
+        }
+      }
+    }
+
+    lbSelect.addEventListener('change', updatePanels);
+    if (window.jQuery) {
+      $(lbSelect).on('change', updatePanels);
+    }
+    updatePanels();
   }
 })();

@@ -17,6 +17,7 @@ class UserModel extends Model
         'email',
         'password',
         'role',
+        'avatar',
         'two_factor_secret',
     ];
 
@@ -30,6 +31,7 @@ class UserModel extends Model
 
     // Validation
     protected $validationRules = [
+        'id'       => 'permit_empty|is_natural_no_zero',
         'name'     => 'required|min_length[2]|max_length[100]',
         'email'    => 'required|valid_email|is_unique[users.email,id,{id}]',
         'password' => 'permit_empty|min_length[8]',
