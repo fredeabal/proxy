@@ -156,17 +156,17 @@
                       <i class="ti ti-lock fs-4"></i>
                     </span>
                     <div>
-                      <div class="fw-bold text-body fs-3 d-flex align-items-center gap-1">
+                      <div class="fw-semibold d-flex align-items-center gap-1" style="font-size: 0.78rem; line-height: 1.25;">
                         <?= esc($cert['domain']) ?>
                         <a href="https://<?= esc($cert['domain']) ?>" 
                            target="_blank" 
                            rel="noopener noreferrer" 
                            class="text-muted text-hover-primary" 
                            title="Abrir https://<?= esc($cert['domain']) ?> en nueva pestaña">
-                          <i class="ti ti-external-link fs-2"></i>
+                          <i class="ti ti-external-link" style="font-size: 0.85rem;"></i>
                         </a>
                       </div>
-                      <div class="text-muted font-monospace mt-1 d-flex align-items-center gap-1" style="font-size: 0.8rem;" title="<?= esc($cert['certificate_path']) ?>">
+                      <div class="text-muted font-monospace mt-1 d-flex align-items-center gap-1" style="font-size: 0.75rem;" title="<?= esc($cert['certificate_path']) ?>">
                         <i class="ti ti-file-certificate"></i>
                         <span class="text-truncate" style="max-width: 280px;"><?= esc(basename($cert['certificate_path'] ?: 'fullchain.pem')) ?></span>
                       </div>
@@ -327,13 +327,13 @@
               </span>
               <div class="overflow-hidden">
                 <div class="d-flex align-items-center gap-1 text-truncate">
-                  <h6 class="fw-bold mb-0 text-body fs-4 text-truncate"><?= esc($cert['domain']) ?></h6>
+                  <span class="fw-semibold mb-0 text-truncate" style="font-size: 0.78rem; line-height: 1.25;"><?= esc($cert['domain']) ?></span>
                   <a href="https://<?= esc($cert['domain']) ?>" 
                      target="_blank" 
                      rel="noopener noreferrer" 
                      class="text-muted p-1 flex-shrink-0" 
                      title="Abrir https://<?= esc($cert['domain']) ?> en nueva pestaña">
-                    <i class="ti ti-external-link fs-2"></i>
+                    <i class="ti ti-external-link" style="font-size: 0.85rem;"></i>
                   </a>
                 </div>
                 <div class="text-muted font-monospace text-truncate d-flex align-items-center gap-1" style="font-size: 0.75rem;">
