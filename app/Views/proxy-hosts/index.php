@@ -183,7 +183,7 @@
                     <?php if (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
                       <div class="d-flex flex-column" style="gap: 2px;">
                         <?php foreach ($item['upstreams'] as $srv): ?>
-                          <span class="d-inline-flex align-items-center font-monospace fw-semibold target-item-<?= $item['id'] ?>" 
+                          <span class="d-inline-flex align-items-center font-monospace text-body fw-medium target-item-<?= $item['id'] ?>" 
                                 data-host="<?= esc($srv['server_host']) ?>" 
                                 data-port="<?= esc($srv['server_port']) ?>" 
                                 style="font-size: 0.78rem; line-height: 1.25; transition: color 0.2s;">
@@ -193,7 +193,7 @@
                         <?php endforeach; ?>
                       </div>
                     <?php else: ?>
-                      <span class="d-inline-flex align-items-center fw-semibold font-monospace single-target-<?= $item['id'] ?>" style="font-size: 0.78rem; line-height: 1.25; transition: color 0.2s;">
+                      <span class="d-inline-flex align-items-center font-monospace text-body fw-medium single-target-<?= $item['id'] ?>" style="font-size: 0.78rem; line-height: 1.25; transition: color 0.2s;">
                         <span class="target-dot rounded-circle bg-secondary me-1 flex-shrink-0" style="width: 6.5px; height: 6.5px; opacity: 0.45; transition: all 0.2s;"></span>
                         <?= esc($item['scheme']) ?>://<?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?>
                       </span>
@@ -456,7 +456,7 @@
               <?php if (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
                 <div class="d-inline-flex flex-column align-top ms-1" style="gap: 2px;">
                   <?php foreach ($item['upstreams'] as $srv): ?>
-                    <span class="d-inline-flex align-items-center font-monospace fw-semibold target-item-<?= $item['id'] ?>" 
+                    <span class="d-inline-flex align-items-center font-monospace text-body fw-medium target-item-<?= $item['id'] ?>" 
                           data-host="<?= esc($srv['server_host']) ?>" 
                           data-port="<?= esc($srv['server_port']) ?>" 
                           style="font-size: 0.78rem; line-height: 1.25; transition: color 0.2s;">
@@ -466,7 +466,7 @@
                   <?php endforeach; ?>
                 </div>
               <?php else: ?>
-                <span class="d-inline-flex align-items-center fw-semibold font-monospace single-target-<?= $item['id'] ?>" style="font-size: 0.78rem; line-height: 1.25; transition: color 0.2s;">
+                <span class="d-inline-flex align-items-center font-monospace text-body fw-medium single-target-<?= $item['id'] ?>" style="font-size: 0.78rem; line-height: 1.25; transition: color 0.2s;">
                   <span class="target-dot rounded-circle bg-secondary me-1 flex-shrink-0" style="width: 6.5px; height: 6.5px; opacity: 0.45; transition: all 0.2s;"></span>
                   <?= esc($item['scheme']) ?>://<?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?>
                 </span>
