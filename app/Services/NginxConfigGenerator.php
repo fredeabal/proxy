@@ -422,40 +422,27 @@ class NginxConfigGenerator
         $padInner = str_repeat(' ', $indent + 4);
 
         $errors = [
-            404 => [
-                'title' => '404 Not Found',
-                'desc'  => 'El recurso solicitado no fue encontrado en este servidor.',
-            ],
-            502 => [
-                'title' => '502 Bad Gateway',
-                'desc'  => 'No se pudo conectar con el servicio solicitado.',
-            ],
-            503 => [
-                'title' => '503 Service Unavailable',
-                'desc'  => 'El servicio no está disponible temporalmente o está en mantenimiento.',
-            ],
-            504 => [
-                'title' => '504 Gateway Timeout',
-                'desc'  => 'El servicio tardó demasiado tiempo en responder a la solicitud.',
-            ],
+            404 => '404 Not Found',
+            502 => '502 Bad Gateway',
+            503 => '503 Service Unavailable',
+            504 => '504 Gateway Timeout',
         ];
 
         $style = 'body{font-family:system-ui,-apple-system,sans-serif;background:#0b1114;color:#e1e7ec;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}'
-               . 'div{text-align:center;padding:2.5rem;border:1px solid #374853;border-radius:12px;background:#151c24;max-width:480px;box-shadow:0 10px 25px rgba(0,0,0,0.5)}'
-               . 'h1{color:#ef4444;font-size:2.2rem;margin-bottom:0.5rem;font-weight:700}'
-               . 'p{color:#94a3b8;font-size:0.95rem;line-height:1.5}';
+               . 'div{text-align:center;padding:2.5rem 3.5rem;border:1px solid #374853;border-radius:12px;background:#151c24;box-shadow:0 10px 25px rgba(0,0,0,0.5)}'
+               . 'h1{color:#ef4444;font-size:2.2rem;margin:0;font-weight:700}';
 
         $lines = [];
         $lines[] = "{$pad}# Páginas de error amigables (conservando código HTTP original)";
         $lines[] = "{$pad}# Modo Stealth: mapear 403 (ej. directivas deny de IPs) a 404 Not Found";
         $lines[] = "{$pad}error_page 403 =404 /proxy_error_404.html;";
-        foreach ($errors as $code => $info) {
+        foreach ($errors as $code => $title) {
             $lines[] = "{$pad}error_page {$code} /proxy_error_{$code}.html;";
         }
 
-        foreach ($errors as $code => $info) {
-            $html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>{$info['title']}</title>"
-                  . "<style>{$style}</style></head><body><div><h1>{$info['title']}</h1><p>{$info['desc']}</p></div></body></html>";
+        foreach ($errors as $code => $title) {
+            $html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>{$title}</title>"
+                  . "<style>{$style}</style></head><body><div><h1>{$title}</h1></div></body></html>";
 
             $lines[] = "{$pad}location = /proxy_error_{$code}.html {";
             $lines[] = "{$padInner}internal;";
