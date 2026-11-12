@@ -424,19 +424,19 @@ class NginxConfigGenerator
         $errors = [
             404 => [
                 'title' => '404 Not Found',
-                'desc'  => 'El recurso o dominio solicitado no fue encontrado en este servidor.',
+                'desc'  => 'El recurso solicitado no fue encontrado en este servidor.',
             ],
             502 => [
                 'title' => '502 Bad Gateway',
-                'desc'  => 'El servidor proxy inverso no pudo conectar con el backend de destino.',
+                'desc'  => 'No se pudo conectar con el servicio solicitado.',
             ],
             503 => [
                 'title' => '503 Service Unavailable',
-                'desc'  => 'El servicio de destino no está disponible temporalmente o está en mantenimiento.',
+                'desc'  => 'El servicio no está disponible temporalmente o está en mantenimiento.',
             ],
             504 => [
                 'title' => '504 Gateway Timeout',
-                'desc'  => 'El servidor de destino tardó demasiado tiempo en responder a la solicitud.',
+                'desc'  => 'El servicio tardó demasiado tiempo en responder a la solicitud.',
             ],
         ];
 
