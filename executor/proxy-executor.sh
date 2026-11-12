@@ -342,7 +342,7 @@ EOF
             CERTBOT_ARGS+=(--register-unsafely-without-email --agree-tos)
         fi
 
-        CERTBOT_ARGS+=(--non-interactive --keep-until-expiring)
+        CERTBOT_ARGS+=(--non-interactive --keep-until-expiring --expand)
 
         # Crear webroot de ACME si no existe
         mkdir -p "${ACME_WEBROOT:-/var/www/letsencrypt}/.well-known/acme-challenge"

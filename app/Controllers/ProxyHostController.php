@@ -461,6 +461,21 @@ class ProxyHostController extends BaseController
                 ->with('error', "Proxy Host \"{$data['domain']}\" actualizado en HTTP, pero no se pudo emitir el certificado: {$sslError}");
         }
 
+        // Si ya tenía SSL activo y cambiaron los dominios/aliases (o se añadieron nuevos), re-expandir el certificado automáticamente
+        $aliasesChanged = ($existing['domain_names'] ?? '') !== ($data['domain_names'] ?? '');
+        $domainChanged  = ($existing['domain'] ?? '') !== ($data['domain'] ?? '');
+        if (($aliasesChanged || $domainChanged) && !empty($existing['ssl_enabled']) && $ssl['mode'] !== 'new' && $ssl['mode'] !== 'none') {
+            $updatedHost = $this->proxyModel->find($id);
+            if ($updatedHost) {
+                try {
+                    $aliasesList = $this->proxyModel->getAliasesList($updatedHost);
+                    $this->sslManager->issueCertificate($updatedHost['domain'], $aliasesList);
+                } catch (\Throwable $e) {
+                    log_message('warning', "No se pudo auto-expandir certificado SSL para {$updatedHost['domain']}: " . $e->getMessage());
+                }
+            }
+        }
+
         return redirect()->to(base_url('proxy-hosts'))
             ->with('success', "Proxy Host \"{$data['domain']}\" se ha actualizado con éxito.");
     }
