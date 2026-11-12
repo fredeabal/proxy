@@ -30,6 +30,7 @@ error_exit() {
 }
 
 # Asegurar que existan los archivos mínimos en conf.d para que Nginx siempre valide variables globales ($geoip_blocked)
+# y que exista un bloque default_server (catch-all) para evitar que peticiones no coincidentes caigan en otros vhosts
 ensure_confd_defaults() {
     if [ -d /etc/nginx ] && [ -w /etc/nginx ]; then
         mkdir -p /etc/nginx/conf.d 2>/dev/null || true
@@ -45,6 +46,32 @@ map $remote_addr $geoip_blocked {
 }
 EOF
             chmod 0644 /etc/nginx/conf.d/proxy_manager_geoip.conf 2>/dev/null || true
+        fi
+
+        if [ ! -f /etc/nginx/conf.d/00_default_server.conf ]; then
+            cat << 'EOF' > /etc/nginx/conf.d/00_default_server.conf
+# ==============================================================================
+# Reverse Proxy Manager - Catch-All Default Server
+# Atrapa peticiones por IP o dominios no configurados / caídos
+# ==============================================================================
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    # Permitir retos ACME de Let's Encrypt si aplican
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        root /var/www/letsencrypt;
+    }
+
+    location / {
+        default_type text/html;
+        return 404 '<!DOCTYPE html><html><head><meta charset="utf-8"><title>404 - No encontrado</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}.box{background:#1e293b;padding:2.5rem;border-radius:1rem;border:1px solid #334155;max-width:500px}h1{font-size:3rem;margin:0 0 1rem;color:#f43f5e}p{color:#94a3b8;line-height:1.5}</style></head><body><div class="box"><h1>404</h1><h2>Dominio o servicio no encontrado</h2><p>El dominio o host solicitado no est&aacute; configurado o est&aacute; temporalmente desactivado en este Proxy Inverso.</p></div></body></html>';
+    }
+}
+EOF
+            chmod 0644 /etc/nginx/conf.d/00_default_server.conf 2>/dev/null || true
         fi
     fi
 }
