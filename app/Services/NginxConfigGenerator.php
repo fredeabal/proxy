@@ -422,27 +422,40 @@ class NginxConfigGenerator
         $padInner = str_repeat(' ', $indent + 4);
 
         $errors = [
-            404 => '404 Not Found',
-            502 => '502 Bad Gateway',
-            503 => '503 Service Unavailable',
-            504 => '504 Gateway Timeout',
+            404 => [
+                'title' => '404 Not Found',
+                'desc'  => 'El recurso solicitado no est&aacute; disponible.',
+            ],
+            502 => [
+                'title' => '502 Bad Gateway',
+                'desc'  => 'El servicio no responde temporalmente.',
+            ],
+            503 => [
+                'title' => '503 Service Unavailable',
+                'desc'  => 'Servicio no disponible moment&aacute;neamente.',
+            ],
+            504 => [
+                'title' => '504 Gateway Timeout',
+                'desc'  => 'Tiempo de espera agotado al conectar con el servicio.',
+            ],
         ];
 
-        $style = 'body{font-family:system-ui,-apple-system,sans-serif;background:#0b1114;color:#e1e7ec;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}'
-               . 'div{text-align:center;padding:2.5rem 3.5rem;border:1px solid #374853;border-radius:12px;background:#151c24;box-shadow:0 10px 25px rgba(0,0,0,0.5)}'
-               . 'h1{color:#ef4444;font-size:2.2rem;margin:0;font-weight:700}';
+        $style = 'body{font-family:system-ui,-apple-system,sans-serif;background:#0b1114;color:#e1e7ec;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;padding:1rem;box-sizing:border-box}'
+               . 'div{text-align:center;padding:2.5rem;border:1px solid #374853;border-radius:12px;background:#151c24;max-width:440px;width:100%;box-shadow:0 10px 25px rgba(0,0,0,0.5)}'
+               . 'h1{color:#ef4444;font-size:2.2rem;margin:0 0 0.75rem;font-weight:700;line-height:1.2}'
+               . 'p{color:#94a3b8;font-size:0.95rem;line-height:1.5;margin:0}';
 
         $lines = [];
         $lines[] = "{$pad}# Páginas de error amigables (conservando código HTTP original)";
         $lines[] = "{$pad}# Modo Stealth: mapear 403 (ej. directivas deny de IPs) a 404 Not Found";
         $lines[] = "{$pad}error_page 403 =404 /proxy_error_404.html;";
-        foreach ($errors as $code => $title) {
+        foreach ($errors as $code => $info) {
             $lines[] = "{$pad}error_page {$code} /proxy_error_{$code}.html;";
         }
 
-        foreach ($errors as $code => $title) {
-            $html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>{$title}</title>"
-                  . "<style>{$style}</style></head><body><div><h1>{$title}</h1></div></body></html>";
+        foreach ($errors as $code => $info) {
+            $html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{$info['title']}</title>"
+                  . "<style>{$style}</style></head><body><div><h1>{$info['title']}</h1><p>{$info['desc']}</p></div></body></html>";
 
             $lines[] = "{$pad}location = /proxy_error_{$code}.html {";
             $lines[] = "{$padInner}internal;";
