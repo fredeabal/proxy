@@ -606,6 +606,10 @@ class NginxConfigGenerator
                 'title' => '404 Not Found',
                 'desc'  => 'El recurso solicitado no est&aacute; disponible.',
             ],
+            429 => [
+                'title' => '429 Too Many Requests',
+                'desc'  => 'Has realizado demasiadas peticiones. Int&eacute;ntalo de nuevo en unos momentos.',
+            ],
             502 => [
                 'title' => '502 Bad Gateway',
                 'desc'  => 'El servicio no responde temporalmente.',
