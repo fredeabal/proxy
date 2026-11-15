@@ -8,7 +8,7 @@ class AddRateLimitToProxyHosts extends Migration
 {
     public function up()
     {
-        $this->forge->addColumn('proxy_hosts', [
+        $columns = [
             'rate_limit_enabled' => [
                 'type'       => 'TINYINT',
                 'constraint' => 1,
@@ -37,7 +37,18 @@ class AddRateLimitToProxyHosts extends Migration
                 'null'       => false,
                 'default'    => 1,
             ],
-        ]);
+        ];
+
+        $missing = [];
+        foreach ($columns as $name => $definition) {
+            if (!$this->db->fieldExists($name, 'proxy_hosts')) {
+                $missing[$name] = $definition;
+            }
+        }
+
+        if ($missing !== []) {
+            $this->forge->addColumn('proxy_hosts', $missing);
+        }
     }
 
     public function down()
