@@ -194,10 +194,18 @@ case "${ACTION}" in
 
         if [ "${IS_STREAM}" -eq 1 ]; then
             if ! grep -rq "ngx_stream_module" /etc/nginx/modules-enabled/ /etc/nginx/nginx.conf 2>/dev/null; then
-                if [ -f /usr/lib/nginx/modules/ngx_stream_module.so ]; then
-                    MODULES_LINE="load_module /usr/lib/nginx/modules/ngx_stream_module.so;"
-                elif ! nginx -V 2>&1 | grep -q -- "--with-stream=yes\|--with-stream "; then
-                    error_exit "El módulo Nginx stream (libnginx-mod-stream) no está instalado. Ejecuta en el servidor: sudo apt-get install -y libnginx-mod-stream" 5
+                STREAM_MOD_SO=""
+                for cand in /usr/lib/nginx/modules/ngx_stream_module.so /etc/nginx/modules/ngx_stream_module.so /usr/lib64/nginx/modules/ngx_stream_module.so; do
+                    if [ -f "${cand}" ]; then
+                        STREAM_MOD_SO="${cand}"
+                        break
+                    fi
+                done
+
+                if [ -n "${STREAM_MOD_SO}" ]; then
+                    MODULES_LINE="load_module ${STREAM_MOD_SO};"
+                elif ! nginx -V 2>&1 | grep -qE -- '--with-stream(=yes)?([[:space:]]|$)'; then
+                    error_exit "El módulo Nginx stream (libnginx-mod-stream) no está instalado. Ejecuta en el servidor: sudo apt-get update && sudo apt-get install -y libnginx-mod-stream" 5
                 fi
             fi
 
