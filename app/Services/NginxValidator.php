@@ -106,7 +106,9 @@ class NginxValidator
 
         // Si el ejecutor existe en el sistema
         if (is_file($executor)) {
-            $cmd = ['sudo', $executor, 'validate-config', $filePath];
+            $cmd = $isStream
+                ? ['sudo', $executor, 'validate-config', $filePath, '--stream']
+                : ['sudo', $executor, 'validate-config', $filePath];
             $descriptors = [
                 0 => ['pipe', 'r'],
                 1 => ['pipe', 'w'],

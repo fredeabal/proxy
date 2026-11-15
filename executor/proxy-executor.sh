@@ -159,42 +159,65 @@ case "${ACTION}" in
         fi
 
         CONFIG_FILE="$1"
+        IS_STREAM=0
+        if [ "${2:-}" = "--stream" ]; then
+            IS_STREAM=1
+        fi
         # Seguridad: Solo permitir rutas absolutas dentro de directorios autorizados
         REAL_PATH="$(realpath -q "${CONFIG_FILE}" 2>/dev/null || echo "")"
         if [ -z "${REAL_PATH}" ] || [ ! -f "${REAL_PATH}" ]; then
             error_exit "Archivo de configuración no encontrado o no válido." 3
         fi
 
-        # Comprobar que esté dentro de sites-available o staging autorizado
+        # Comprobar que esté dentro de sites-available, streams-available o staging autorizado
         case "${REAL_PATH}" in
+            "${STREAMS_AVAILABLE}"/*)
+                IS_STREAM=1
+                ;;
             "${SITES_AVAILABLE}"/*|"${STAGING_DIR}"/*|/var/www/*/writable/staging/*)
+                if [[ "$(basename "${REAL_PATH}")" == stream_* ]]; then
+                    IS_STREAM=1
+                fi
                 ;;
             *)
                 error_exit "Ruta no autorizada para validación: ${REAL_PATH}" 4
                 ;;
         esac
 
-        # Para validar un archivo vhost (que contiene bloques server {}),
-        # lo envolvemos temporalmente en un bloque http {} completo.
         TEST_WRAPPER=$(mktemp /tmp/nginx_val_XXXXXX.conf)
         trap 'rm -f "${TEST_WRAPPER:-}"' EXIT
 
-        MIME_LINE=""
-        if [ -f /etc/nginx/mime.types ]; then
-            MIME_LINE="include /etc/nginx/mime.types;"
+        MODULES_LINE=""
+        if [ -d /etc/nginx/modules-enabled ] && ls /etc/nginx/modules-enabled/*.conf >/dev/null 2>&1; then
+            MODULES_LINE="include /etc/nginx/modules-enabled/*.conf;"
         fi
 
-        # Incluir configuraciones de conf.d (como GeoIP2 maps o variables compartidas) si existen
-        CONFD_LINE=""
-        GEOIP_FALLBACK=""
-        if [ -d /etc/nginx/conf.d ]; then
-            CONFD_LINE="include /etc/nginx/conf.d/*.conf;"
-        fi
-        if ! grep -rq '\$geoip_blocked' /etc/nginx/conf.d/*.conf 2>/dev/null; then
-            GEOIP_FALLBACK=$'    map $remote_addr $geoip_blocked {\n        default 0;\n    }'
-        fi
+        if [ "${IS_STREAM}" -eq 1 ]; then
+            cat <<EOF > "${TEST_WRAPPER}"
+${MODULES_LINE}
+events { worker_connections 1024; }
+stream {
+    include "${REAL_PATH}";
+}
+EOF
+        else
+            MIME_LINE=""
+            if [ -f /etc/nginx/mime.types ]; then
+                MIME_LINE="include /etc/nginx/mime.types;"
+            fi
 
-        cat <<EOF > "${TEST_WRAPPER}"
+            # Incluir configuraciones de conf.d (como GeoIP2 maps o variables compartidas) si existen
+            CONFD_LINE=""
+            GEOIP_FALLBACK=""
+            if [ -d /etc/nginx/conf.d ]; then
+                CONFD_LINE="include /etc/nginx/conf.d/*.conf;"
+            fi
+            if ! grep -rq '\$geoip_blocked' /etc/nginx/conf.d/*.conf 2>/dev/null; then
+                GEOIP_FALLBACK=$'    map $remote_addr $geoip_blocked {\n        default 0;\n    }'
+            fi
+
+            cat <<EOF > "${TEST_WRAPPER}"
+${MODULES_LINE}
 events { worker_connections 1024; }
 http {
     ${MIME_LINE}
@@ -203,6 +226,7 @@ ${GEOIP_FALLBACK}
     include "${REAL_PATH}";
 }
 EOF
+        fi
         set +e
         VALIDATION_OUTPUT=$(nginx -t -c "${TEST_WRAPPER}" 2>&1)
         EXIT_CODE=$?
