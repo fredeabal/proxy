@@ -228,4 +228,81 @@ final class BackupRecoveryTest extends CIUnitTestCase
         $manager = new BackupManager(null, $this->testBackupDir);
         $this->assertSame(15, $manager->getRetentionCount());
     }
+
+    public function testRestoreBackupRestoresProxyUpstreamsAndIgnoresUnknownColumns(): void
+    {
+        $proxyModel = new ProxyHostModel();
+        $certModel  = new CertificateModel();
+        $db         = \Config\Database::connect();
+
+        $certId = $certModel->insert([
+            'domain'           => 'lb.example.com',
+            'certificate_path' => '/etc/letsencrypt/live/lb.example.com/fullchain.pem',
+            'private_key_path' => '/etc/letsencrypt/live/lb.example.com/privkey.pem',
+            'issuer'           => "Let's Encrypt",
+            'status'           => 'valid',
+        ], true);
+
+        $proxyId = $proxyModel->insert([
+            'domain'                 => 'lb.example.com',
+            'scheme'                 => 'http',
+            'forward_host'           => '10.0.0.10',
+            'forward_port'           => 8080,
+            'ssl_enabled'            => 1,
+            'certificate_id'         => $certId,
+            'enabled'                => 1,
+            'load_balancing_enabled' => 1,
+            'lb_algorithm'           => 'round_robin',
+        ], true);
+
+        $db->table('proxy_upstreams')->insert([
+            'proxy_host_id' => $proxyId,
+            'server_host'   => '10.0.0.11',
+            'server_port'   => 8081,
+            'weight'        => 2,
+            'max_fails'     => 3,
+            'fail_timeout'  => 10,
+            'is_backup'     => 0,
+            'is_down'       => 0,
+        ]);
+
+        $manager   = new BackupManager(null, $this->testBackupDir);
+        $backupRes = $manager->createBackup();
+        $this->assertTrue($backupRes['success']);
+
+        // Añadir una columna extra en el SQLite del backup para verificar que restoreBackup filtra columnas desconocidas
+        $zipPath = $manager->resolveSafeBackupPath($backupRes['filename']);
+        $zip     = new ZipArchive();
+        $this->assertTrue($zip->open($zipPath) === true);
+
+        $tmpSqlite = tempnam(sys_get_temp_dir(), 'bkp_extra_col_');
+        file_put_contents($tmpSqlite, $zip->getFromName('database.sqlite'));
+        $sqlite = new \SQLite3($tmpSqlite);
+        $prefixedTable = $db->prefixTable('proxy_hosts');
+        $sqlite->exec("ALTER TABLE {$prefixedTable} ADD COLUMN legacy_extra_col TEXT DEFAULT NULL");
+        $sqlite->exec("UPDATE {$prefixedTable} SET legacy_extra_col = 'legacy'");
+        $sqlite->close();
+
+        $newDbBytes = file_get_contents($tmpSqlite);
+        @unlink($tmpSqlite);
+        $zip->deleteName('database.sqlite');
+        $zip->addFromString('database.sqlite', $newDbBytes);
+        $manifest = json_decode((string) $zip->getFromName('manifest.json'), true);
+        $manifest['sha256_database'] = hash('sha256', $newDbBytes);
+        $zip->deleteName('manifest.json');
+        $zip->addFromString('manifest.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $zip->close();
+
+        // Borrar datos actuales y restaurar
+        $db->table('proxy_upstreams')->emptyTable();
+        $db->table('proxy_hosts')->emptyTable();
+        $db->table('certificates')->emptyTable();
+
+        $restoreRes = $manager->restoreBackup($backupRes['filename']);
+        $this->assertTrue($restoreRes['success'], $restoreRes['error'] ?? '');
+
+        $restoredUpstreams = $db->table('proxy_upstreams')->where('proxy_host_id', $proxyId)->get()->getResultArray();
+        $this->assertCount(1, $restoredUpstreams);
+        $this->assertSame('10.0.0.11', $restoredUpstreams[0]['server_host']);
+    }
 }

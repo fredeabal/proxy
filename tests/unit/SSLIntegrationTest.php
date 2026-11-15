@@ -275,5 +275,26 @@ final class SSLIntegrationTest extends CIUnitTestCase
         $this->assertSame(0, (int) $updatedProxy['ssl_enabled']);
         $this->assertSame(0, (int) $updatedProxy['force_https']);
     }
+
+    public function testSparkSslRenewCommandRenewsExpiringCertificates(): void
+    {
+        $certModel = new CertificateModel();
+        $expiringId = $certModel->insert([
+            'domain'           => 'cron-renew.empresa.com',
+            'certificate_path' => '/etc/letsencrypt/live/cron-renew.empresa.com/fullchain.pem',
+            'private_key_path' => '/etc/letsencrypt/live/cron-renew.empresa.com/privkey.pem',
+            'issuer'           => "Let's Encrypt",
+            'expires_at'       => date('Y-m-d H:i:s', strtotime('+10 days')),
+            'auto_renew'       => 1,
+            'status'           => 'expiring_soon',
+        ]);
+
+        $output = command('ssl:renew');
+        $this->assertNotFalse($output);
+
+        $updated = $certModel->find($expiringId);
+        $this->assertSame('valid', $updated['status']);
+        $this->assertGreaterThan(time() + (60 * 86400), strtotime($updated['expires_at']));
+    }
 }
 

@@ -323,5 +323,46 @@ class ProxyHostRules
             'headers'    => $parsedHeaders,
         ];
     }
+
+    /**
+     * Valida una URL de destino para hosts en modo redirección (301/302).
+     * Permite únicamente http:// o https:// y rechaza caracteres de inyección Nginx.
+     */
+    public function valid_redirect_url(?string $url, ?string &$error = null, array $data = []): bool
+    {
+        $isRedirect = !empty($data['redirect_enabled']);
+        $url = trim((string) $url);
+
+        if ($url === '') {
+            if ($isRedirect) {
+                $error = 'La URL de destino para la redirección es obligatoria.';
+                return false;
+            }
+            return true;
+        }
+
+        if (strlen($url) > 2048) {
+            $error = 'La URL de destino excede la longitud máxima permitida (2048 caracteres).';
+            return false;
+        }
+
+        if (preg_match('/[\s;{}"\'\\\\#\$\x00-\x1f\x7f]/', $url)) {
+            $error = 'La URL de destino contiene caracteres no válidos o potencialmente peligrosos.';
+            return false;
+        }
+
+        if (!preg_match('#^https?://#i', $url) || filter_var($url, FILTER_VALIDATE_URL) === false) {
+            $error = 'La URL de destino debe comenzar por http:// o https:// y tener un formato válido.';
+            return false;
+        }
+
+        $host = parse_url($url, PHP_URL_HOST);
+        if (empty($host)) {
+            $error = 'La URL de destino debe incluir un dominio o IP válida.';
+            return false;
+        }
+
+        return true;
+    }
 }
 

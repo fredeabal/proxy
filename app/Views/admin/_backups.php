@@ -55,27 +55,14 @@
 
 <!-- Listado de Copias de Seguridad (SIN columna contenido) -->
 <div class="card border shadow-none mb-4" id="backupsManagerCard">
-  <!-- Buscador en tiempo real e Importar Backup -->
+  <!-- Buscador en tiempo real -->
   <div class="card-body p-3 border-bottom">
-    <div class="row g-2 align-items-center">
-      <div class="col-12 col-md-6">
-        <div class="input-group">
-          <span class="input-group-text bg-transparent"><i class="ti ti-search"></i></span>
-          <input type="search"
-                 id="backupSearchInput"
-                 class="form-control"
-                 placeholder="Buscar por nombre de archivo o fecha...">
-        </div>
-      </div>
-      <div class="col-12 col-md-6">
-        <form method="post" action="<?= base_url('admin/backups/upload') ?>" enctype="multipart/form-data" class="d-flex align-items-center gap-2">
-          <?= csrf_field() ?>
-          <input type="file" name="backup_file" accept=".zip,application/zip" class="form-control form-control-sm" required>
-          <button type="submit" class="btn btn-primary btn-sm text-nowrap d-inline-flex align-items-center gap-1">
-            <i class="ti ti-upload"></i> Importar
-          </button>
-        </form>
-      </div>
+    <div class="input-group">
+      <span class="input-group-text bg-transparent"><i class="ti ti-search"></i></span>
+      <input type="search"
+             id="backupSearchInput"
+             class="form-control"
+             placeholder="Buscar por nombre de archivo o fecha...">
     </div>
   </div>
 
@@ -214,6 +201,59 @@
   </div>
 </div>
 
+<!-- Importar Copia de Seguridad (Drag & Drop) -->
+<div class="card border shadow-none mb-4">
+  <div class="card-body p-3 p-md-4">
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <div class="round-32 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle flex-shrink-0">
+        <i class="ti ti-upload fs-5"></i>
+      </div>
+      <div>
+        <h5 class="card-title fw-semibold mb-0">Importar Copia de Seguridad</h5>
+        <p class="text-muted small mb-0">Sube un archivo <code>.zip</code> de copia de seguridad para añadirlo a la lista y poder restaurarlo.</p>
+      </div>
+    </div>
+
+    <form method="post" action="<?= base_url('admin/backups/upload') ?>" enctype="multipart/form-data" id="backupUploadForm">
+      <?= csrf_field() ?>
+      <div class="dropzone-modern-wrapper p-4 rounded-3 border border-2 border-dashed text-center position-relative" id="backupDropzone">
+        <input type="file" id="backupFileInput" name="backup_file" class="visually-hidden" accept=".zip,application/zip" required>
+
+        <!-- Prompt inicial -->
+        <div id="backupDropzonePrompt">
+          <div class="round-48 rounded-circle bg-primary-subtle text-primary d-inline-flex align-items-center justify-content-center mb-2 shadow-sm">
+            <i class="ti ti-cloud-upload fs-7"></i>
+          </div>
+          <h6 class="fw-semibold mb-1">Arrastra tu copia de seguridad (.zip) o haz clic para examinar</h6>
+          <span class="text-muted small d-block mb-3">Formato permitido: archivo .zip generado por el panel (Máx. 50 MB)</span>
+          <label for="backupFileInput" class="btn btn-sm btn-outline-primary px-3 mb-0 cursor-pointer" title="Seleccionar Archivo">
+            <i class="ti ti-folder-open me-1"></i>Seleccionar Archivo
+          </label>
+        </div>
+
+        <!-- Vista previa del archivo seleccionado -->
+        <div id="backupDropzonePreview" class="d-none">
+          <div class="d-flex flex-column align-items-center justify-content-center">
+            <div class="round-48 rounded-circle bg-success-subtle text-success d-inline-flex align-items-center justify-content-center mb-2 shadow-sm">
+              <i class="ti ti-file-zip fs-7"></i>
+            </div>
+            <h6 class="fw-semibold font-monospace mb-1" id="backupSelectedName"></h6>
+            <span class="text-muted small d-block mb-3" id="backupSelectedSize"></span>
+            <div class="d-flex flex-wrap gap-2 justify-content-center">
+              <label for="backupFileInput" class="btn btn-sm btn-outline-primary px-3 mb-0 cursor-pointer" title="Cambiar Archivo">
+                <i class="ti ti-refresh me-1"></i>Cambiar Archivo
+              </label>
+              <button type="submit" class="btn btn-sm btn-primary px-3">
+                <i class="ti ti-cloud-upload me-1"></i> Importar Copia
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Formularios ocultos de acción de backups -->
 <form id="restoreBackupForm" method="post" action="<?= base_url('admin/backups/restore') ?>" class="d-none">
   <?= csrf_field() ?>
@@ -224,4 +264,64 @@
   <?= csrf_field() ?>
   <input type="hidden" name="filename" id="deleteBackupFilename" value="">
 </form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var backupInput = document.getElementById('backupFileInput');
+  var dropzone = document.getElementById('backupDropzone');
+  var promptBox = document.getElementById('backupDropzonePrompt');
+  var previewBox = document.getElementById('backupDropzonePreview');
+  var selectedName = document.getElementById('backupSelectedName');
+  var selectedSize = document.getElementById('backupSelectedSize');
+
+  function formatBytes(bytes) {
+    if (!bytes || bytes <= 0) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB'];
+    var i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2) + ' ' + units[i];
+  }
+
+  function handleBackupFile(file) {
+    if (!file) return;
+    if (selectedName) selectedName.textContent = file.name;
+    if (selectedSize) selectedSize.textContent = formatBytes(file.size);
+    if (promptBox) promptBox.classList.add('d-none');
+    if (previewBox) previewBox.classList.remove('d-none');
+  }
+
+  if (backupInput) {
+    backupInput.addEventListener('change', function(e) {
+      if (e.target.files && e.target.files[0]) {
+        handleBackupFile(e.target.files[0]);
+      }
+    });
+  }
+
+  if (dropzone && backupInput) {
+    ['dragenter', 'dragover'].forEach(function(eventName) {
+      dropzone.addEventListener(eventName, function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.add('border-primary', 'bg-primary-subtle');
+      }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(function(eventName) {
+      dropzone.addEventListener(eventName, function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove('border-primary', 'bg-primary-subtle');
+      }, false);
+    });
+
+    dropzone.addEventListener('drop', function(e) {
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length > 0) {
+        backupInput.files = files;
+        handleBackupFile(files[0]);
+      }
+    }, false);
+  }
+});
+</script>
 

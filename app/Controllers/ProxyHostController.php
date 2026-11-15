@@ -43,6 +43,7 @@ class ProxyHostController extends BaseController
                 ->like('domain', $search)
                 ->orLike('domain_names', $search)
                 ->orLike('forward_host', $search)
+                ->orLike('redirect_url', $search)
                 ->groupEnd();
         }
 
@@ -120,6 +121,15 @@ class ProxyHostController extends BaseController
                 'hsts_enabled'           => 0,
                 'load_balancing_enabled' => 0,
                 'lb_algorithm'           => 'round_robin',
+                'redirect_enabled'       => 0,
+                'redirect_url'           => '',
+                'redirect_code'          => 301,
+                'redirect_preserve_path' => 1,
+                'rate_limit_enabled'     => 0,
+                'rate_limit_requests'    => 10,
+                'rate_limit_unit'        => 'r/s',
+                'rate_limit_burst'       => 20,
+                'rate_limit_nodelay'     => 1,
             ],
             'upstreams'       => old('upstreams', []),
             'certificate'     => null,
@@ -163,7 +173,9 @@ class ProxyHostController extends BaseController
         $sendTimeout    = $this->request->getPost('proxy_send_timeout');
         $maxBodySize    = $this->request->getPost('client_max_body_size');
 
-        $isLb = $this->request->getPost('load_balancing_enabled') ? 1 : 0;
+        $routingMode = $this->resolveRoutingModeFromRequest();
+        $isLb        = $routingMode['isLb'];
+        $isRedirect  = $routingMode['isRedirect'];
         $lbAlgorithm = strtolower(trim((string) $this->request->getPost('lb_algorithm')));
         if (!in_array($lbAlgorithm, ['round_robin', 'least_conn', 'ip_hash'], true)) {
             $lbAlgorithm = 'round_robin';
@@ -178,8 +190,12 @@ class ProxyHostController extends BaseController
             $parsedUpstreams = $lbResult['servers'];
         }
 
-        $forwardHost = trim((string) $this->request->getPost('forward_host'));
-        $forwardPort = (int) $this->request->getPost('forward_port');
+        $forwardHost = $isRedirect ? '' : trim((string) $this->request->getPost('forward_host'));
+        $forwardPort = $isRedirect ? 0 : (int) $this->request->getPost('forward_port');
+        $scheme      = strtolower(trim((string) $this->request->getPost('scheme')));
+        if ($isRedirect && !in_array($scheme, ['http', 'https'], true)) {
+            $scheme = 'http';
+        }
 
         if ($isLb && !empty($parsedUpstreams)) {
             $forwardHost = $parsedUpstreams[0]['server_host'];
@@ -189,27 +205,36 @@ class ProxyHostController extends BaseController
         $data = [
             'domain'                 => $primaryDomain,
             'domain_names'           => $normalizedAliases,
-            'scheme'                 => strtolower(trim((string) $this->request->getPost('scheme'))),
+            'scheme'                 => $scheme,
             'forward_host'           => $forwardHost,
             'forward_port'           => $forwardPort,
             'load_balancing_enabled' => $isLb,
             'lb_algorithm'           => $lbAlgorithm,
-            'websocket_enabled'      => $this->request->getPost('websocket_enabled') ? 1 : 0,
+            'redirect_enabled'       => $isRedirect,
+            'redirect_url'           => $isRedirect ? $routingMode['redirect_url'] : null,
+            'redirect_code'          => $routingMode['redirect_code'],
+            'redirect_preserve_path' => $routingMode['redirect_preserve_path'],
+            'websocket_enabled'      => $isRedirect ? 0 : ($this->request->getPost('websocket_enabled') ? 1 : 0),
             'enabled'                => $this->request->getPost('enabled') !== null ? ($this->request->getPost('enabled') ? 1 : 0) : 1,
             'custom_headers'         => $rawHeaders !== '' ? $rawHeaders : null,
             'proxy_connect_timeout'  => ($connectTimeout !== null && $connectTimeout !== '') ? $connectTimeout : 60,
             'proxy_read_timeout'     => ($readTimeout !== null && $readTimeout !== '') ? $readTimeout : 60,
             'proxy_send_timeout'     => ($sendTimeout !== null && $sendTimeout !== '') ? $sendTimeout : 60,
             'client_max_body_size'   => ($maxBodySize !== null && $maxBodySize !== '') ? $maxBodySize : 10,
-            'proxy_ssl_verify'       => $this->request->getPost('proxy_ssl_verify') ? 1 : 0,
+            'proxy_ssl_verify'       => $isRedirect ? 0 : ($this->request->getPost('proxy_ssl_verify') ? 1 : 0),
             'hsts_enabled'           => $this->request->getPost('hsts_enabled') ? 1 : 0,
         ];
+        $data = array_merge($data, $this->parseRateLimitFromRequest());
 
         $ssl = $this->parseSslSelection($primaryDomain);
         if ($ssl['error']) {
             return redirect()->back()->withInput()->with('error', $ssl['error']);
         }
         $data = array_merge($data, $ssl['fields']);
+
+        if ($isRedirect) {
+            $this->applyRedirectValidationRules();
+        }
 
         if (!$this->proxyModel->insert($data)) {
             return redirect()->back()
@@ -252,9 +277,13 @@ class ProxyHostController extends BaseController
         }
 
         // Registro en auditoría
-        $targetDesc = $isLb 
-            ? "Upstream [{$lbAlgorithm}] (" . count($parsedUpstreams) . " servidores)"
-            : "{$data['scheme']}://{$data['forward_host']}:{$data['forward_port']}";
+        if ($isRedirect) {
+            $targetDesc = "Redirect {$data['redirect_code']} -> {$data['redirect_url']}";
+        } elseif ($isLb) {
+            $targetDesc = "Upstream [{$lbAlgorithm}] (" . count($parsedUpstreams) . " servidores)";
+        } else {
+            $targetDesc = "{$data['scheme']}://{$data['forward_host']}:{$data['forward_port']}";
+        }
         AuditLogModel::log(
             'proxy_create',
             "Creado y desplegado Proxy Host [ID: {$newId}] {$data['domain']} -> {$targetDesc}"
@@ -349,7 +378,9 @@ class ProxyHostController extends BaseController
         $sendTimeout    = $this->request->getPost('proxy_send_timeout');
         $maxBodySize    = $this->request->getPost('client_max_body_size');
 
-        $isLb = $this->request->getPost('load_balancing_enabled') ? 1 : 0;
+        $routingMode = $this->resolveRoutingModeFromRequest();
+        $isLb        = $routingMode['isLb'];
+        $isRedirect  = $routingMode['isRedirect'];
         $lbAlgorithm = strtolower(trim((string) $this->request->getPost('lb_algorithm')));
         if (!in_array($lbAlgorithm, ['round_robin', 'least_conn', 'ip_hash'], true)) {
             $lbAlgorithm = 'round_robin';
@@ -364,8 +395,12 @@ class ProxyHostController extends BaseController
             $parsedUpstreams = $lbResult['servers'];
         }
 
-        $forwardHost = trim((string) $this->request->getPost('forward_host'));
-        $forwardPort = (int) $this->request->getPost('forward_port');
+        $forwardHost = $isRedirect ? '' : trim((string) $this->request->getPost('forward_host'));
+        $forwardPort = $isRedirect ? 0 : (int) $this->request->getPost('forward_port');
+        $scheme      = strtolower(trim((string) $this->request->getPost('scheme')));
+        if ($isRedirect && !in_array($scheme, ['http', 'https'], true)) {
+            $scheme = 'http';
+        }
 
         if ($isLb && !empty($parsedUpstreams)) {
             $forwardHost = $parsedUpstreams[0]['server_host'];
@@ -376,21 +411,26 @@ class ProxyHostController extends BaseController
             'id'                     => $id,
             'domain'                 => $primaryDomain,
             'domain_names'           => $normalizedAliases,
-            'scheme'                 => strtolower(trim((string) $this->request->getPost('scheme'))),
+            'scheme'                 => $scheme,
             'forward_host'           => $forwardHost,
             'forward_port'           => $forwardPort,
             'load_balancing_enabled' => $isLb,
             'lb_algorithm'           => $lbAlgorithm,
-            'websocket_enabled'      => $this->request->getPost('websocket_enabled') ? 1 : 0,
+            'redirect_enabled'       => $isRedirect,
+            'redirect_url'           => $isRedirect ? $routingMode['redirect_url'] : null,
+            'redirect_code'          => $routingMode['redirect_code'],
+            'redirect_preserve_path' => $routingMode['redirect_preserve_path'],
+            'websocket_enabled'      => $isRedirect ? 0 : ($this->request->getPost('websocket_enabled') ? 1 : 0),
             'enabled'                => $this->request->getPost('enabled') !== null ? ($this->request->getPost('enabled') ? 1 : 0) : 0,
             'custom_headers'         => $rawHeaders !== '' ? $rawHeaders : null,
             'proxy_connect_timeout'  => ($connectTimeout !== null && $connectTimeout !== '') ? $connectTimeout : ($existing['proxy_connect_timeout'] ?? 60),
             'proxy_read_timeout'     => ($readTimeout !== null && $readTimeout !== '') ? $readTimeout : ($existing['proxy_read_timeout'] ?? 60),
             'proxy_send_timeout'     => ($sendTimeout !== null && $sendTimeout !== '') ? $sendTimeout : ($existing['proxy_send_timeout'] ?? 60),
             'client_max_body_size'   => ($maxBodySize !== null && $maxBodySize !== '') ? $maxBodySize : ($existing['client_max_body_size'] ?? 10),
-            'proxy_ssl_verify'       => $this->request->getPost('proxy_ssl_verify') ? 1 : 0,
+            'proxy_ssl_verify'       => $isRedirect ? 0 : ($this->request->getPost('proxy_ssl_verify') ? 1 : 0),
             'hsts_enabled'           => $this->request->getPost('hsts_enabled') ? 1 : 0,
         ];
+        $data = array_merge($data, $this->parseRateLimitFromRequest($existing));
 
         $ssl = $this->parseSslSelection($primaryDomain);
         if ($ssl['error']) {
@@ -403,6 +443,9 @@ class ProxyHostController extends BaseController
             'domain',
             "required|min_length[3]|max_length[253]|valid_rfc1123_domain|is_unique[proxy_hosts.domain,id,{$id}]"
         );
+        if ($isRedirect) {
+            $this->applyRedirectValidationRules();
+        }
 
         if (!$this->proxyModel->update($id, $data)) {
             return redirect()->back()
@@ -446,9 +489,13 @@ class ProxyHostController extends BaseController
         }
 
         // Registro en auditoría
-        $targetDesc = $isLb 
-            ? "Upstream [{$lbAlgorithm}] (" . count($parsedUpstreams) . " servidores)"
-            : "{$data['scheme']}://{$data['forward_host']}:{$data['forward_port']}";
+        if ($isRedirect) {
+            $targetDesc = "Redirect {$data['redirect_code']} -> {$data['redirect_url']}";
+        } elseif ($isLb) {
+            $targetDesc = "Upstream [{$lbAlgorithm}] (" . count($parsedUpstreams) . " servidores)";
+        } else {
+            $targetDesc = "{$data['scheme']}://{$data['forward_host']}:{$data['forward_port']}";
+        }
         AuditLogModel::log(
             'proxy_update',
             "Actualizado y desplegado Proxy Host [ID: {$id}] {$data['domain']} -> {$targetDesc}"
@@ -549,6 +596,59 @@ class ProxyHostController extends BaseController
                 'success' => false,
                 'status'  => 'offline',
                 'detail'  => 'Host no encontrado',
+            ]);
+        }
+
+        if (!empty($proxy['redirect_enabled'])) {
+            $redirectUrl  = (string) ($proxy['redirect_url'] ?? '');
+            $redirectCode = (int) ($proxy['redirect_code'] ?? 301);
+
+            $startTime = microtime(true);
+            $ch = curl_init($redirectUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_NOBODY         => true,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT => 2.0,
+                CURLOPT_TIMEOUT        => 2.5,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS      => 3,
+                CURLOPT_USERAGENT      => 'NetCrew-HealthCheck/1.0',
+            ]);
+            curl_exec($ch);
+            $code   = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $time   = (float) curl_getinfo($ch, CURLINFO_TOTAL_TIME);
+            $errNo  = curl_errno($ch);
+            $errMsg = curl_error($ch);
+            curl_close($ch);
+
+            $latency  = round(($time > 0 ? $time : (microtime(true) - $startTime)) * 1000);
+            $isOnline = ($errNo === 0 && $code > 0 && $code < 500);
+
+            if ($isOnline) {
+                $status = 'online';
+                $detail = "HTTP {$code} ({$latency}ms)";
+            } else {
+                $status = 'offline';
+                $detail = !empty($errMsg) ? $errMsg : ($code >= 500 ? "HTTP {$code}" : 'Sin respuesta / Inaccesible');
+            }
+
+            return $this->response->setJSON([
+                'success'    => true,
+                'id'         => $id,
+                'status'     => $status,
+                'is_online'  => $isOnline,
+                'http_code'  => $code ?: $redirectCode,
+                'detail'     => $detail,
+                'latency_ms' => $latency,
+                'servers'    => [
+                    [
+                        'host'      => $redirectUrl,
+                        'port'      => 0,
+                        'is_online' => $isOnline,
+                    ],
+                ],
             ]);
         }
 
@@ -1123,6 +1223,68 @@ class ProxyHostController extends BaseController
         return [
             'error'   => null,
             'servers' => $validatedServers,
+        ];
+    }
+
+    /**
+     * Resuelve el modo de enrutamiento desde el POST (`proxy_mode` o `load_balancing_enabled`).
+     *
+     * @return array{mode: string, isLb: int, isRedirect: int, redirect_url: string, redirect_code: int, redirect_preserve_path: int}
+     */
+    protected function resolveRoutingModeFromRequest(): array
+    {
+        $rawMode = strtolower(trim((string) $this->request->getPost('proxy_mode')));
+        if (!in_array($rawMode, ['single', 'load_balancer', 'redirect'], true)) {
+            $rawMode = $this->request->getPost('load_balancing_enabled') ? 'load_balancer' : 'single';
+        }
+
+        $redirectCode = (int) $this->request->getPost('redirect_code');
+        if (!in_array($redirectCode, [301, 302], true)) {
+            $redirectCode = 301;
+        }
+
+        return [
+            'mode'                   => $rawMode,
+            'isLb'                   => $rawMode === 'load_balancer' ? 1 : 0,
+            'isRedirect'             => $rawMode === 'redirect' ? 1 : 0,
+            'redirect_url'           => trim((string) $this->request->getPost('redirect_url')),
+            'redirect_code'          => $redirectCode,
+            'redirect_preserve_path' => $this->request->getPost('redirect_preserve_path') ? 1 : 0,
+        ];
+    }
+
+    /**
+     * Ajusta las reglas de validación del modelo cuando el host opera en modo redirección.
+     */
+    protected function applyRedirectValidationRules(): void
+    {
+        $this->proxyModel->setValidationRule('forward_host', 'permit_empty|max_length[253]');
+        $this->proxyModel->setValidationRule('forward_port', 'permit_empty|is_natural|less_than_equal_to[65535]');
+        $this->proxyModel->setValidationRule('redirect_url', 'required|valid_redirect_url');
+    }
+
+    /**
+     * Extrae y normaliza los parámetros de Rate Limiting por dominio desde la petición.
+     */
+    protected function parseRateLimitFromRequest(?array $existing = null): array
+    {
+        $enabled  = $this->request->getPost('rate_limit_enabled') ? 1 : 0;
+        $requests = $this->request->getPost('rate_limit_requests');
+        $unit     = strtolower(trim((string) $this->request->getPost('rate_limit_unit')));
+        $burst    = $this->request->getPost('rate_limit_burst');
+
+        if ($unit === '') {
+            $unit = (string) ($existing['rate_limit_unit'] ?? 'r/s');
+        }
+
+        return [
+            'rate_limit_enabled'  => $enabled,
+            'rate_limit_requests' => ($requests !== null && $requests !== '') ? $requests : ($existing['rate_limit_requests'] ?? 10),
+            'rate_limit_unit'     => $unit,
+            'rate_limit_burst'    => ($burst !== null && $burst !== '') ? $burst : ($existing['rate_limit_burst'] ?? 20),
+            'rate_limit_nodelay'  => $enabled
+                ? ($this->request->getPost('rate_limit_nodelay') ? 1 : 0)
+                : (int) ($existing['rate_limit_nodelay'] ?? 1),
         ];
     }
 }

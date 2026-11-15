@@ -7,7 +7,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     // Inicializar Select2 en selects del formulario si aún no están inicializados
     if (window.jQuery && jQuery.fn.select2) {
-      $('#scheme, #ssl_certificate, #load_balancing_enabled, #lb_algorithm, #upstreamsTableBody select.select2').each(function () {
+      $('#scheme, #ssl_certificate, #proxy_mode, #lb_algorithm, #redirect_code, #rate_limit_unit, #rate_limit_nodelay, #upstreamsTableBody select.select2').each(function () {
         if (!$(this).data('select2')) {
           $(this).select2({ width: '100%', minimumResultsForSearch: Infinity });
         }
@@ -17,6 +17,7 @@
     initCertificateDomainFilter();
     initSslToggles();
     initLoadBalancingToggles();
+    initRateLimitToggles();
     initFormSubmits();
     initVhostEditor();
 
@@ -153,14 +154,36 @@
 
     mainForm.addEventListener('submit', function (e) {
       const btn = mainForm.querySelector('button[type="submit"]');
-      if (btn && !btn.disabled) {
-        btn.disabled = true;
+      if (btn) {
         const icon = btn.querySelector('i');
         if (icon) {
           icon.className = 'spinner-border spinner-border-sm me-1';
         }
+        setTimeout(function () {
+          btn.disabled = true;
+        }, 0);
       }
     });
+  }
+
+  /**
+   * Controla la visualización condicional de las opciones de Rate Limiting por dominio
+   */
+  function initRateLimitToggles() {
+    const toggle = document.getElementById('rate_limit_enabled');
+    const panel  = document.getElementById('rateLimitPanel');
+    if (!toggle || !panel) return;
+
+    function updatePanel() {
+      if (toggle.checked) {
+        panel.classList.remove('d-none');
+      } else {
+        panel.classList.add('d-none');
+      }
+    }
+
+    toggle.addEventListener('change', updatePanel);
+    updatePanel();
   }
 
   /**
@@ -353,42 +376,77 @@
   }
 
   /**
-   * Controla la alternancia entre destino único y balanceador de carga upstream (máximo 2 servidores).
+   * Controla la alternancia entre servidor único, balanceador de carga upstream y redirección HTTP.
    */
   function initLoadBalancingToggles() {
-    const lbSelect   = document.getElementById('load_balancing_enabled');
-    const singleCols = document.querySelectorAll('.single-target-col');
-    const lbCols     = document.querySelectorAll('.lb-target-col');
-    const fHost      = document.getElementById('forward_host');
-    const fPort      = document.getElementById('forward_port');
-    const up0Host    = document.getElementById('upstream_0_host');
-    const up0Port    = document.getElementById('upstream_0_port');
-    const form       = document.getElementById('proxyForm');
+    const modeSelect   = document.getElementById('proxy_mode');
+    const proxyCols    = document.querySelectorAll('.proxy-target-col');
+    const singleCols   = document.querySelectorAll('.single-target-col');
+    const lbCols       = document.querySelectorAll('.lb-target-col');
+    const redirectCols = document.querySelectorAll('.redirect-target-col');
+    const fHost        = document.getElementById('forward_host');
+    const fPort        = document.getElementById('forward_port');
+    const redirectUrl  = document.getElementById('redirect_url');
+    const up0Host      = document.getElementById('upstream_0_host');
+    const up0Port      = document.getElementById('upstream_0_port');
+    const scheme       = document.getElementById('scheme');
+    const form         = document.getElementById('proxyHostForm');
 
-    if (!lbSelect) return;
+    if (!modeSelect) return;
+
+    function toggleInputs(elements, enable) {
+      elements.forEach(container => {
+        container.querySelectorAll('input, select, textarea').forEach(input => {
+          input.disabled = !enable;
+        });
+      });
+    }
 
     function updatePanels() {
-      const isLb = lbSelect.value === '1';
+      const mode       = modeSelect.value || 'single';
+      const isSingle   = mode === 'single';
+      const isLb       = mode === 'load_balancer';
+      const isRedirect = mode === 'redirect';
 
-      singleCols.forEach(col => col.classList.toggle('d-none', isLb));
+      proxyCols.forEach(col => col.classList.toggle('d-none', isRedirect));
+      toggleInputs(proxyCols, !isRedirect);
+
+      singleCols.forEach(col => col.classList.toggle('d-none', !isSingle));
+      toggleInputs(singleCols, isSingle);
+
       lbCols.forEach(col => col.classList.toggle('d-none', !isLb));
+      toggleInputs(lbCols, isLb);
 
-      if (fHost) fHost.required = !isLb;
-      if (fPort) fPort.required = !isLb;
+      redirectCols.forEach(col => col.classList.toggle('d-none', !isRedirect));
+      toggleInputs(redirectCols, isRedirect);
 
-      if (isLb) {
-        if (window.jQuery && $('#lb_algorithm').data('select2')) {
-          $('#lb_algorithm').next('.select2-container').css('width', '100%');
+      if (scheme) scheme.required = false;
+      if (fHost) fHost.required = isSingle;
+      if (fPort) {
+        fPort.required = isSingle;
+        if (isRedirect && fPort.value === '0') {
+          fPort.value = '';
         }
+      }
+      if (redirectUrl) redirectUrl.required = isRedirect;
+
+      if (up0Port && up0Port.value === '0') {
+        up0Port.value = '80';
+      }
+
+      if (isLb && window.jQuery && $('#lb_algorithm').data('select2')) {
+        $('#lb_algorithm').next('.select2-container').css('width', '100%');
+      }
+      if (isRedirect && window.jQuery && $('#redirect_code').data('select2')) {
+        $('#redirect_code').next('.select2-container').css('width', '100%');
       }
     }
 
-    function onLbModeChange() {
+    function onModeChange() {
       updatePanels();
-      const isLb = lbSelect.value === '1';
       // Al cambiar manualmente a balanceo de carga, solo si el servidor 1 está completamente vacío
       // rellenar con lo que el usuario tenía en destino único para agilizar la entrada
-      if (isLb) {
+      if (modeSelect.value === 'load_balancer') {
         if (up0Host && !up0Host.value.trim() && fHost && fHost.value.trim()) {
           up0Host.value = fHost.value.trim();
         }
@@ -398,15 +456,15 @@
       }
     }
 
-    lbSelect.addEventListener('change', onLbModeChange);
+    modeSelect.addEventListener('change', onModeChange);
     if (window.jQuery) {
-      $(lbSelect).on('change', onLbModeChange);
+      $(modeSelect).on('change', onModeChange);
     }
 
     // Al enviar el formulario, si está en modo balanceo, sincronizar fHost y fPort con el servidor 1
     if (form) {
       form.addEventListener('submit', function () {
-        if (lbSelect.value === '1' && up0Host && up0Host.value.trim()) {
+        if (modeSelect.value === 'load_balancer' && up0Host && up0Host.value.trim()) {
           if (fHost) fHost.value = up0Host.value.trim();
           if (fPort && up0Port && up0Port.value.trim()) {
             fPort.value = up0Port.value.trim();

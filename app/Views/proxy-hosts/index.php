@@ -142,7 +142,6 @@
             <?php foreach ($proxies as $item): ?>
               <?php 
                 $aliases = !empty($item['domain_names']) ? preg_split('/[\s,]+/', trim($item['domain_names']), -1, PREG_SPLIT_NO_EMPTY) : [];
-                $isLocalhost = in_array(strtolower($item['forward_host']), ['localhost', '127.0.0.1', '::1'], true) || str_starts_with($item['forward_host'], '127.');
               ?>
               <tr class="proxy-row" data-status="<?= $item['enabled'] ? 'active' : 'disabled' ?>" onclick="window.location.href='<?= base_url('proxy-hosts/edit/' . $item['id']) ?>'">
                 <!-- Dominio y Aliases con el Mundo (Health Check) al principio -->
@@ -180,7 +179,12 @@
                 <!-- Destino -->
                 <td>
                   <div class="d-flex align-items-center gap-2">
-                    <?php if (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
+                    <?php if (!empty($item['redirect_enabled'])): ?>
+                      <span class="d-inline-flex align-items-center font-monospace text-body fw-medium single-target-<?= $item['id'] ?> text-truncate" style="font-size: 0.78rem; line-height: 1.25; max-width: 280px; transition: color 0.2s;" title="<?= esc($item['redirect_url'] ?? '') ?>">
+                        <span class="target-dot rounded-circle bg-secondary me-1 flex-shrink-0" style="width: 6.5px; height: 6.5px; opacity: 0.45; transition: all 0.2s;"></span>
+                        <?= esc($item['redirect_url'] ?? '') ?>
+                      </span>
+                    <?php elseif (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
                       <div class="d-flex flex-column" style="gap: 2px;">
                         <?php foreach ($item['upstreams'] as $srv): ?>
                           <span class="d-inline-flex align-items-center font-monospace text-body fw-medium target-item-<?= $item['id'] ?>" 
@@ -197,9 +201,6 @@
                         <span class="target-dot rounded-circle bg-secondary me-1 flex-shrink-0" style="width: 6.5px; height: 6.5px; opacity: 0.45; transition: all 0.2s;"></span>
                         <?= esc($item['scheme']) ?>://<?= esc($item['forward_host']) ?>:<?= esc($item['forward_port']) ?>
                       </span>
-                      <?php if ($isLocalhost): ?>
-                        <span class="badge bg-secondary-subtle text-secondary border border-secondary fs-1" title="Destino local en el mismo host">local</span>
-                      <?php endif; ?>
                     <?php endif; ?>
                   </div>
                 </td>
@@ -453,7 +454,9 @@
           <div class="text-muted small mt-2">
             <div>
               <strong>Destino:</strong> 
-              <?php if (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
+              <?php if (!empty($item['redirect_enabled'])): ?>
+                <span class="font-monospace text-body fw-medium ms-1" style="font-size: 0.78rem;"><?= esc($item['redirect_url'] ?? '') ?></span>
+              <?php elseif (!empty($item['load_balancing_enabled']) && !empty($item['upstreams'])): ?>
                 <div class="d-inline-flex flex-column align-top ms-1" style="gap: 2px;">
                   <?php foreach ($item['upstreams'] as $srv): ?>
                     <span class="d-inline-flex align-items-center font-monospace text-body fw-medium target-item-<?= $item['id'] ?>" 

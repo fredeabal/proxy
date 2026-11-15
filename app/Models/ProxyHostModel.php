@@ -33,6 +33,15 @@ class ProxyHostModel extends Model
         'custom_vhost',
         'load_balancing_enabled',
         'lb_algorithm',
+        'redirect_enabled',
+        'redirect_url',
+        'redirect_code',
+        'redirect_preserve_path',
+        'rate_limit_enabled',
+        'rate_limit_requests',
+        'rate_limit_unit',
+        'rate_limit_burst',
+        'rate_limit_nodelay',
     ];
 
     protected bool $allowEmptyInserts = false;
@@ -59,7 +68,16 @@ class ProxyHostModel extends Model
         'proxy_ssl_verify'      => 'permit_empty|in_list[0,1]',
         'hsts_enabled'          => 'permit_empty|in_list[0,1]',
         'load_balancing_enabled' => 'permit_empty|in_list[0,1]',
-        'lb_algorithm'          => 'permit_empty|in_list[round_robin,least_conn,ip_hash]',
+        'lb_algorithm'           => 'permit_empty|in_list[round_robin,least_conn,ip_hash]',
+        'redirect_enabled'       => 'permit_empty|in_list[0,1]',
+        'redirect_url'           => 'permit_empty|valid_redirect_url',
+        'redirect_code'          => 'permit_empty|in_list[301,302]',
+        'redirect_preserve_path' => 'permit_empty|in_list[0,1]',
+        'rate_limit_enabled'     => 'permit_empty|in_list[0,1]',
+        'rate_limit_requests'    => 'permit_empty|is_natural_no_zero|less_than_equal_to[10000]',
+        'rate_limit_unit'        => 'permit_empty|in_list[r/s,r/m]',
+        'rate_limit_burst'       => 'permit_empty|is_natural|less_than_equal_to[10000]',
+        'rate_limit_nodelay'     => 'permit_empty|in_list[0,1]',
     ];
 
     protected $validationMessages = [
@@ -102,6 +120,24 @@ class ProxyHostModel extends Model
         'client_max_body_size' => [
             'is_natural'         => 'El tamaño máximo de subida debe ser un número entero mayor o igual a 0.',
             'less_than_equal_to' => 'El tamaño máximo de subida no puede superar 10240 MB (10 GB).',
+        ],
+        'redirect_url' => [
+            'required'           => 'La URL de destino para la redirección es obligatoria.',
+            'valid_redirect_url' => 'La URL de destino debe comenzar por http:// o https:// y no contener caracteres peligrosos.',
+        ],
+        'redirect_code' => [
+            'in_list' => 'El código de redirección debe ser 301 o 302.',
+        ],
+        'rate_limit_requests' => [
+            'is_natural_no_zero' => 'El límite de peticiones debe ser un número entero mayor a 0.',
+            'less_than_equal_to' => 'El límite de peticiones no puede superar 10000.',
+        ],
+        'rate_limit_unit' => [
+            'in_list' => 'La unidad de rate limit debe ser r/s o r/m.',
+        ],
+        'rate_limit_burst' => [
+            'is_natural'         => 'La ráfaga (burst) debe ser un número entero mayor o igual a 0.',
+            'less_than_equal_to' => 'La ráfaga (burst) no puede superar 10000.',
         ],
     ];
 

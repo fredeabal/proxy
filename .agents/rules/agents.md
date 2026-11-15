@@ -8,6 +8,7 @@ Este archivo consolida las directrices de programación y diseño visual para es
 
 - **Restricción de Aplicación**: Nunca modifies el código, base de datos ni la configuración de otra aplicación que no sea en la que se está trabajando activamente. Limítate exclusivamente al espacio de trabajo actual.
 - **Seguridad y Subida a GitHub**: Nunca subir cambios a GitHub sin aprobación explícita del usuario. Antes de subir, verificar mediante `git diff` y `git status` que no existan datos sensibles (contraseñas, claves SMTP, tokens, archivos `.env` o secretos de producción). Los archivos de configuración local deben estar siempre ignorados en `.gitignore`.
+- **Pruebas Unitarias bajo Demanda**: NUNCA ejecutar pruebas unitarias (como PHPUnit) automáticamente por iniciativa propia. Solo ejecutar pruebas unitarias cuando el usuario lo solicite explícitamente en la conversación.
 
 ---
 ## 1. REGLAS DE PROGRAMACIÓN

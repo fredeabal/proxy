@@ -135,6 +135,15 @@ chmod 640 "$INSTALL_DIR/.env" 2>/dev/null || true
 chmod -R 770 "$INSTALL_DIR/writable"
 chmod 600 "$INSTALL_DIR/writable/database/database.sqlite" 2>/dev/null || true
 
+# Configurar/actualizar cron para renovación automática de certificados SSL (una vez al día)
+cat << EOF > /etc/cron.d/proxy-manager
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+15 3 * * * www-data cd ${INSTALL_DIR} && php spark ssl:renew >> ${INSTALL_DIR}/writable/logs/ssl-renew.log 2>&1
+EOF
+chown root:root /etc/cron.d/proxy-manager
+chmod 0644 /etc/cron.d/proxy-manager
+
 # 8. Reiniciar servicios
 echo -e "${YELLOW}⏳ [6/6] Reiniciando servicios y recargando Nginx...${NC}"
 for service in $(systemctl list-unit-files --type=service 2>/dev/null | grep -oE 'php[0-9.]*-fpm\.service'); do

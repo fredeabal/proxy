@@ -33,27 +33,42 @@ class NginxConfigGenerator
         $this->assertSafeDomain($primaryDomain);
 
         $serverNames = $this->buildServerNames($proxy);
-        $scheme = strtolower(trim((string) ($proxy['scheme'] ?? 'http')));
-        if (!in_array($scheme, ['http', 'https'], true)) {
-            throw new InvalidArgumentException("Esquema inválido: {$scheme}");
-        }
+        $isRedirect = !empty($proxy['redirect_enabled']);
+        $isLb = !$isRedirect && !empty($proxy['load_balancing_enabled']);
 
-        $isLb = !empty($proxy['load_balancing_enabled']);
-        if ($isLb) {
-            if (!isset($proxy['upstreams']) && $id > 0) {
-                $upstreamModel = new \App\Models\ProxyUpstreamModel();
-                $proxy['upstreams'] = $upstreamModel->getForProxy($id);
+        if ($isRedirect) {
+            $redirectUrl = trim((string) ($proxy['redirect_url'] ?? ''));
+            $rules = new ProxyHostRules();
+            $urlError = null;
+            if (!$rules->valid_redirect_url($redirectUrl, $urlError, ['redirect_enabled' => 1])) {
+                throw new InvalidArgumentException($urlError ?? 'URL de redirección inválida.');
             }
-            if (empty($proxy['upstreams'])) {
-                throw new InvalidArgumentException("El modo de balanceo de carga requiere al menos un servidor backend configurado.");
+            $redirectCode = (int) ($proxy['redirect_code'] ?? 301);
+            if (!in_array($redirectCode, [301, 302], true)) {
+                throw new InvalidArgumentException("Código de redirección inválido: {$redirectCode}");
             }
         } else {
-            $forwardHost = trim((string) ($proxy['forward_host'] ?? ''));
-            $this->assertSafeForwardHost($forwardHost);
+            $scheme = strtolower(trim((string) ($proxy['scheme'] ?? 'http')));
+            if (!in_array($scheme, ['http', 'https'], true)) {
+                throw new InvalidArgumentException("Esquema inválido: {$scheme}");
+            }
 
-            $forwardPort = (int) ($proxy['forward_port'] ?? 80);
-            if ($forwardPort < 1 || $forwardPort > 65535) {
-                throw new InvalidArgumentException("Puerto de destino fuera de rango: {$forwardPort}");
+            if ($isLb) {
+                if (!isset($proxy['upstreams']) && $id > 0) {
+                    $upstreamModel = new \App\Models\ProxyUpstreamModel();
+                    $proxy['upstreams'] = $upstreamModel->getForProxy($id);
+                }
+                if (empty($proxy['upstreams'])) {
+                    throw new InvalidArgumentException("El modo de balanceo de carga requiere al menos un servidor backend configurado.");
+                }
+            } else {
+                $forwardHost = trim((string) ($proxy['forward_host'] ?? ''));
+                $this->assertSafeForwardHost($forwardHost);
+
+                $forwardPort = (int) ($proxy['forward_port'] ?? 80);
+                if ($forwardPort < 1 || $forwardPort > 65535) {
+                    throw new InvalidArgumentException("Puerto de destino fuera de rango: {$forwardPort}");
+                }
             }
         }
 
@@ -72,6 +87,11 @@ class NginxConfigGenerator
 
         if ($isLb) {
             $lines[] = $this->renderUpstreamBlock($proxy);
+        }
+
+        $rateLimitZone = $this->renderRateLimitZone($proxy);
+        if ($rateLimitZone !== '') {
+            $lines[] = $rateLimitZone;
         }
 
         if ($sslEnabled) {
@@ -97,7 +117,9 @@ class NginxConfigGenerator
                 $lines[] = '        return 301 https://$host$request_uri;';
                 $lines[] = '    }';
             } else {
-                $lines[] = $this->renderProxyPassBlock($proxy, 4);
+                $lines[] = $isRedirect
+                    ? $this->renderRedirectBlock($proxy, 4)
+                    : $this->renderProxyPassBlock($proxy, 4);
             }
 
             $lines[] = '}';
@@ -130,7 +152,9 @@ class NginxConfigGenerator
             $lines[] = '';
             $lines[] = $this->renderErrorPages(4);
             $lines[] = '';
-            $lines[] = $this->renderProxyPassBlock($proxy, 4);
+            $lines[] = $isRedirect
+                ? $this->renderRedirectBlock($proxy, 4)
+                : $this->renderProxyPassBlock($proxy, 4);
             $lines[] = '}';
         } else {
             // -------------------------------------------------------------
@@ -150,7 +174,9 @@ class NginxConfigGenerator
             $lines[] = '';
             $lines[] = $this->renderErrorPages(4);
             $lines[] = '';
-            $lines[] = $this->renderProxyPassBlock($proxy, 4);
+            $lines[] = $isRedirect
+                ? $this->renderRedirectBlock($proxy, 4)
+                : $this->renderProxyPassBlock($proxy, 4);
             $lines[] = '}';
         }
 
@@ -260,6 +286,144 @@ class NginxConfigGenerator
     }
 
     /**
+     * Valida y normaliza la configuración de Rate Limiting por dominio.
+     *
+     * @return array{zone: string, rate: int, unit: string, burst: int, nodelay: bool}|null
+     * @throws InvalidArgumentException
+     */
+    protected function resolveRateLimitConfig(array $proxy): ?array
+    {
+        if (empty($proxy['rate_limit_enabled'])) {
+            return null;
+        }
+
+        $requests = isset($proxy['rate_limit_requests']) && $proxy['rate_limit_requests'] !== ''
+            ? (int) $proxy['rate_limit_requests']
+            : 10;
+        if ($requests < 1 || $requests > 10000) {
+            throw new InvalidArgumentException("El valor de rate_limit_requests está fuera del rango permitido (1-10000): {$requests}");
+        }
+
+        $unit = strtolower(trim((string) ($proxy['rate_limit_unit'] ?? 'r/s')));
+        if (!in_array($unit, ['r/s', 'r/m'], true)) {
+            throw new InvalidArgumentException("Unidad de rate limit inválida: {$unit}");
+        }
+
+        $burst = isset($proxy['rate_limit_burst']) && $proxy['rate_limit_burst'] !== ''
+            ? (int) $proxy['rate_limit_burst']
+            : 20;
+        if ($burst < 0 || $burst > 10000) {
+            throw new InvalidArgumentException("El valor de rate_limit_burst está fuera del rango permitido (0-10000): {$burst}");
+        }
+
+        $nodelay = !isset($proxy['rate_limit_nodelay']) || !empty($proxy['rate_limit_nodelay']);
+
+        $id = (int) ($proxy['id'] ?? 0);
+        $primaryDomain = strtolower(trim((string) ($proxy['domain'] ?? '')));
+        $zoneName = $id > 0
+            ? "rl_proxy_{$id}"
+            : 'rl_proxy_' . substr((string) preg_replace('/[^a-z0-9]/', '_', $primaryDomain), 0, 48);
+
+        return [
+            'zone'    => $zoneName,
+            'rate'    => $requests,
+            'unit'    => $unit,
+            'burst'   => $burst,
+            'nodelay' => $nodelay,
+        ];
+    }
+
+    /**
+     * Renderiza la directiva `limit_req_zone` en el contexto `http` del archivo del host.
+     */
+    protected function renderRateLimitZone(array $proxy): string
+    {
+        $cfg = $this->resolveRateLimitConfig($proxy);
+        if ($cfg === null) {
+            return '';
+        }
+
+        $id = (int) ($proxy['id'] ?? 0);
+        $lines = [
+            "# Rate Limiting por dominio [ID: {$id}]",
+            "limit_req_zone \$binary_remote_addr zone={$cfg['zone']}:10m rate={$cfg['rate']}{$cfg['unit']};",
+            '',
+        ];
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Renderiza las directivas `limit_req` y `limit_req_status` dentro de `location /`.
+     */
+    protected function renderRateLimitDirective(array $proxy, int $indent = 8): string
+    {
+        $cfg = $this->resolveRateLimitConfig($proxy);
+        if ($cfg === null) {
+            return '';
+        }
+
+        $pad = str_repeat(' ', $indent);
+        $limitReq = "limit_req zone={$cfg['zone']}";
+        if ($cfg['burst'] > 0) {
+            $limitReq .= " burst={$cfg['burst']}";
+            if ($cfg['nodelay']) {
+                $limitReq .= ' nodelay';
+            }
+        }
+        $limitReq .= ';';
+
+        $lines = [
+            "{$pad}# Control de tasa (Rate Limiting)",
+            "{$pad}{$limitReq}",
+            "{$pad}limit_req_status 429;",
+        ];
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Renderiza el bloque `location /` para redirección pura (HTTP 301/302) sin `proxy_pass`.
+     */
+    protected function renderRedirectBlock(array $proxy, int $indent = 4): string
+    {
+        $pad      = str_repeat(' ', $indent);
+        $padInner = str_repeat(' ', $indent + 4);
+
+        $redirectUrl  = trim((string) ($proxy['redirect_url'] ?? ''));
+        $redirectCode = (int) ($proxy['redirect_code'] ?? 301);
+        if (!in_array($redirectCode, [301, 302], true)) {
+            $redirectCode = 301;
+        }
+        $preservePath = !isset($proxy['redirect_preserve_path']) || !empty($proxy['redirect_preserve_path']);
+        $target       = $preservePath ? rtrim($redirectUrl, '/') . '$request_uri' : $redirectUrl;
+
+        $lines   = [];
+        $lines[] = "{$pad}location / {";
+        $lines[] = "{$padInner}# Control GeoIP2 (si está habilitado globalmente)";
+        $lines[] = "{$padInner}if (\$geoip_blocked = 1) {";
+        $lines[] = "{$padInner}    return 403;";
+        $lines[] = "{$padInner}}";
+        $lines[] = '';
+
+        $rateLimitDirective = $this->renderRateLimitDirective($proxy, $indent + 4);
+        if ($rateLimitDirective !== '') {
+            $lines[] = $rateLimitDirective;
+            $lines[] = '';
+        }
+
+        if (!empty($proxy['ssl_enabled']) && !empty($proxy['hsts_enabled'])) {
+            $lines[] = "{$padInner}add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;";
+        }
+
+        $lines[] = "{$padInner}# Redirección HTTP {$redirectCode}";
+        $lines[] = "{$padInner}return {$redirectCode} {$target};";
+        $lines[] = "{$pad}}";
+
+        return implode("\n", $lines);
+    }
+
+    /**
      * Renderiza el bloque `location /` con proxy_pass, timeouts, límites de subida,
      * verificación SSL backend, headers validados contra lista blanca y soporte WebSockets.
      */
@@ -308,6 +472,13 @@ class NginxConfigGenerator
         $lines[] = "{$padInner}    return 403;";
         $lines[] = "{$padInner}}";
         $lines[] = '';
+
+        $rateLimitDirective = $this->renderRateLimitDirective($proxy, $indent + 4);
+        if ($rateLimitDirective !== '') {
+            $lines[] = $rateLimitDirective;
+            $lines[] = '';
+        }
+
         $lines[] = "{$padInner}client_max_body_size {$maxBodyDirective};";
         $lines[] = "{$padInner}proxy_pass {$proxyPassUrl};";
 

@@ -233,6 +233,15 @@ EOF
 chmod 0440 /etc/sudoers.d/proxy-manager
 visudo -cf /etc/sudoers.d/proxy-manager > /dev/null 2>&1 || true
 
+# Cron para renovación automática de certificados SSL (una vez al día como www-data)
+cat << EOF > /etc/cron.d/proxy-manager
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+15 3 * * * www-data cd ${INSTALL_DIR} && php spark ssl:renew >> ${INSTALL_DIR}/writable/logs/ssl-renew.log 2>&1
+EOF
+chown root:root /etc/cron.d/proxy-manager
+chmod 0644 /etc/cron.d/proxy-manager
+
 # 9. Configuración del VirtualHost de Nginx para el Panel
 echo -e "\n${YELLOW}⏳ [7/7] Configurando Nginx para el panel web (${PANEL_SCHEME^^} Puerto ${PORT})...${NC}"
 

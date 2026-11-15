@@ -44,7 +44,9 @@ class NginxValidator
             return ['valid' => false, 'error' => 'Falta el bloque server principal.'];
         }
 
-        $hasProxyOrRedirect = str_contains($configContent, 'proxy_pass') || str_contains($configContent, 'return 301');
+        $hasProxyOrRedirect = str_contains($configContent, 'proxy_pass')
+            || str_contains($configContent, 'return 301')
+            || str_contains($configContent, 'return 302');
         $hasFastcgi         = $allowFastcgi && str_contains($configContent, 'fastcgi_pass');
 
         if (!$hasProxyOrRedirect && !$hasFastcgi) {

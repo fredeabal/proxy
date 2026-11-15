@@ -29,9 +29,33 @@ $isForce = (bool) old('force_https', $proxy['force_https'] ?? 0);
 $isHsts  = (bool) old('hsts_enabled', $proxy['hsts_enabled'] ?? 0);
 $isWs    = (bool) old('websocket_enabled', $proxy['websocket_enabled'] ?? 0);
 $isEnabled = (bool) old('enabled', $proxy['enabled'] ?? 1);
-$isLb    = (bool) old('load_balancing_enabled', $proxy['load_balancing_enabled'] ?? 0);
+$isRedirect = (bool) old('redirect_enabled', $proxy['redirect_enabled'] ?? 0);
+$isLb       = !$isRedirect && (bool) old('load_balancing_enabled', $proxy['load_balancing_enabled'] ?? 0);
+$currentMode = old('proxy_mode');
+if (!in_array($currentMode, ['single', 'load_balancer', 'redirect'], true)) {
+    if ($isRedirect) {
+        $currentMode = 'redirect';
+    } elseif ($isLb) {
+        $currentMode = 'load_balancer';
+    } else {
+        $currentMode = 'single';
+    }
+}
+$isRedirectMode   = ($currentMode === 'redirect');
+$isLbMode         = ($currentMode === 'load_balancer');
+$isSingleMode     = ($currentMode === 'single');
+$redirectCode     = (int) old('redirect_code', $proxy['redirect_code'] ?? 301);
+$redirectPreserve = (bool) old('redirect_preserve_path', $proxy['redirect_preserve_path'] ?? 1);
 $currentLbAlgo = old('lb_algorithm', $proxy['lb_algorithm'] ?? 'round_robin');
 $existingUpstreams = old('upstreams', $upstreams ?? []);
+$isRateLimit       = (bool) old('rate_limit_enabled', $proxy['rate_limit_enabled'] ?? 0);
+$rateLimitRequests = (int) old('rate_limit_requests', $proxy['rate_limit_requests'] ?? 10);
+$rateLimitUnit     = old('rate_limit_unit', $proxy['rate_limit_unit'] ?? 'r/s');
+if (!in_array($rateLimitUnit, ['r/s', 'r/m'], true)) {
+    $rateLimitUnit = 'r/s';
+}
+$rateLimitBurst   = (int) old('rate_limit_burst', $proxy['rate_limit_burst'] ?? 20);
+$rateLimitNodelay = (bool) old('rate_limit_nodelay', $proxy['rate_limit_nodelay'] ?? 1);
 ?>
 
 <!-- Cabecera de Página -->
@@ -99,16 +123,17 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
 
               <!-- Modo y Protocolo -->
               <div class="col-12 col-md-4">
-                <label for="load_balancing_enabled" class="form-label fw-semibold">Modo</label>
-                <select id="load_balancing_enabled" name="load_balancing_enabled" class="select2 form-control">
-                  <option value="0" <?= !$isLb ? 'selected' : '' ?>>Servidor Único</option>
-                  <option value="1" <?= $isLb ? 'selected' : '' ?>>Balanceo de Carga (Upstream Pool)</option>
+                <label for="proxy_mode" class="form-label fw-semibold">Modo</label>
+                <select id="proxy_mode" name="proxy_mode" class="select2 form-control">
+                  <option value="single" <?= $isSingleMode ? 'selected' : '' ?>>Servidor Único</option>
+                  <option value="load_balancer" <?= $isLbMode ? 'selected' : '' ?>>Balanceo de Carga (Upstream Pool)</option>
+                  <option value="redirect" <?= $isRedirectMode ? 'selected' : '' ?>>Redirección (HTTP 301 / 302)</option>
                 </select>
               </div>
 
-              <div class="col-12 col-md-2">
+              <div class="col-12 col-md-2 proxy-target-col <?= $isRedirectMode ? 'd-none' : '' ?>">
                 <label for="scheme" class="form-label fw-semibold">Protocolo <span class="text-danger">*</span></label>
-                <select id="scheme" name="scheme" class="select2 form-control <?= session('errors.scheme') ? 'is-invalid' : '' ?>" required>
+                <select id="scheme" name="scheme" class="select2 form-control <?= session('errors.scheme') ? 'is-invalid' : '' ?>" <?= $isRedirectMode ? 'disabled' : '' ?>>
                   <?php $currentScheme = old('scheme', $proxy['scheme'] ?? 'http'); ?>
                   <option value="http" <?= $currentScheme === 'http' ? 'selected' : '' ?>>http://</option>
                   <option value="https" <?= $currentScheme === 'https' ? 'selected' : '' ?>>https://</option>
@@ -116,17 +141,24 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
               </div>
 
               <!-- CAMPOS MODO 1: DESTINO ÚNICO (Estilo estándar limpio) -->
-              <div class="col-8 col-md-4 single-target-col <?= $isLb ? 'd-none' : '' ?>">
+              <div class="col-8 col-md-4 single-target-col <?= !$isSingleMode ? 'd-none' : '' ?>">
                 <label for="forward_host" class="form-label fw-semibold">IP o Hostname <span class="text-danger">*</span></label>
                 <input type="text" 
                        id="forward_host" 
                        name="forward_host" 
                        class="form-control font-monospace <?= session('errors.forward_host') ? 'is-invalid' : '' ?>" 
                        placeholder="ej. 127.0.0.1 o backend.local" 
-                       value="<?= esc(old('forward_host', $proxy['forward_host'] ?? '')) ?>">
+                       value="<?= esc(old('forward_host', $proxy['forward_host'] ?? '')) ?>"
+                       <?= !$isSingleMode ? 'disabled' : '' ?>>
               </div>
 
-              <div class="col-4 col-md-2 single-target-col <?= $isLb ? 'd-none' : '' ?>">
+              <?php
+                $forwardPortVal = old('forward_port');
+                if ($forwardPortVal === null) {
+                    $forwardPortVal = (!empty($proxy['forward_port']) && (int)$proxy['forward_port'] > 0) ? (int)$proxy['forward_port'] : ($isRedirectMode ? '' : 80);
+                }
+              ?>
+              <div class="col-4 col-md-2 single-target-col <?= !$isSingleMode ? 'd-none' : '' ?>">
                 <label for="forward_port" class="form-label fw-semibold">Puerto <span class="text-danger">*</span></label>
                 <input type="number" 
                        id="forward_port" 
@@ -135,13 +167,45 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
                        placeholder="8080" 
                        min="1" 
                        max="65535" 
-                       value="<?= esc(old('forward_port', $proxy['forward_port'] ?? '')) ?>">
+                       value="<?= esc((string)$forwardPortVal) ?>"
+                       <?= !$isSingleMode ? 'disabled' : '' ?>>
+              </div>
+
+              <!-- CAMPOS MODO 3: REDIRECCIÓN HTTP 301 / 302 -->
+              <div class="col-12 col-md-3 redirect-target-col <?= !$isRedirectMode ? 'd-none' : '' ?>">
+                <label for="redirect_code" class="form-label fw-semibold">Código HTTP</label>
+                <select id="redirect_code" name="redirect_code" class="select2 form-control" <?= !$isRedirectMode ? 'disabled' : '' ?>>
+                  <option value="301" <?= $redirectCode === 301 ? 'selected' : '' ?>>301 (Permanente)</option>
+                  <option value="302" <?= $redirectCode === 302 ? 'selected' : '' ?>>302 (Temporal)</option>
+                </select>
+              </div>
+
+              <div class="col-12 col-md-5 redirect-target-col <?= !$isRedirectMode ? 'd-none' : '' ?>">
+                <label for="redirect_url" class="form-label fw-semibold">URL de Destino <span class="text-danger">*</span></label>
+                <input type="text"
+                       inputmode="url"
+                       id="redirect_url"
+                       name="redirect_url"
+                       class="form-control font-monospace <?= session('errors.redirect_url') ? 'is-invalid' : '' ?>"
+                       placeholder="https://nuevo-dominio.com"
+                       value="<?= esc(old('redirect_url', $proxy['redirect_url'] ?? '')) ?>"
+                       <?= !$isRedirectMode ? 'disabled' : '' ?>>
+              </div>
+
+              <div class="col-12 redirect-target-col <?= !$isRedirectMode ? 'd-none' : '' ?>">
+                <div class="form-check form-switch mb-1">
+                  <input class="form-check-input" type="checkbox" role="switch" id="redirect_preserve_path" name="redirect_preserve_path" value="1" <?= $redirectPreserve ? 'checked' : '' ?> <?= !$isRedirectMode ? 'disabled' : '' ?>>
+                  <label class="form-check-label fw-semibold" for="redirect_preserve_path">Conservar ruta y parámetros (<code>$request_uri</code>)</label>
+                </div>
+                <div class="form-text text-muted ps-4">
+                  Si está activo, <code>midominio.com/ruta?a=1</code> redirigirá a <code>destino.com/ruta?a=1</code>.
+                </div>
               </div>
 
               <!-- CAMPO MODO 2: ALGORITMO DE BALANCEO -->
-              <div class="col-12 col-md-6 lb-target-col <?= !$isLb ? 'd-none' : '' ?>">
+              <div class="col-12 col-md-6 lb-target-col <?= !$isLbMode ? 'd-none' : '' ?>">
                 <label for="lb_algorithm" class="form-label fw-semibold">Algoritmo de Distribución</label>
-                <select id="lb_algorithm" name="lb_algorithm" class="select2 form-control">
+                <select id="lb_algorithm" name="lb_algorithm" class="select2 form-control" <?= !$isLbMode ? 'disabled' : '' ?>>
                   <option value="round_robin" <?= $currentLbAlgo === 'round_robin' ? 'selected' : '' ?>>Round Robin (Equitativo por turnos)</option>
                   <option value="least_conn" <?= $currentLbAlgo === 'least_conn' ? 'selected' : '' ?>>Least Connections (Menor carga activa)</option>
                   <option value="ip_hash" <?= $currentLbAlgo === 'ip_hash' ? 'selected' : '' ?>>IP Hash (Persistencia por IP de cliente)</option>
@@ -152,61 +216,67 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
               <?php
                 $up0 = $existingUpstreams[0] ?? [
                     'server_host' => $proxy['forward_host'] ?? '',
-                    'server_port' => $proxy['forward_port'] ?? 80,
+                    'server_port' => (!empty($proxy['forward_port']) && (int)$proxy['forward_port'] > 0) ? (int)$proxy['forward_port'] : 80,
                     'role'        => 'active',
                 ];
+                if (empty($up0['server_port']) || (int)$up0['server_port'] <= 0) {
+                    $up0['server_port'] = 80;
+                }
                 $up1 = $existingUpstreams[1] ?? [
                     'server_host' => '',
                     'server_port' => 80,
                     'role'        => 'active',
                 ];
+                if (empty($up1['server_port']) || (int)$up1['server_port'] <= 0) {
+                    $up1['server_port'] = 80;
+                }
                 $isUp0Backup = !empty($up0['is_backup']) || (($up0['role'] ?? '') === 'backup');
                 $isUp1Backup = !empty($up1['is_backup']) || (($up1['role'] ?? '') === 'backup');
               ?>
-              <div id="loadBalancingPanel" class="col-12 lb-target-col <?= !$isLb ? 'd-none' : '' ?>">
+              <div id="loadBalancingPanel" class="col-12 lb-target-col <?= !$isLbMode ? 'd-none' : '' ?>">
                 <div class="pt-2">
                   <!-- Servidor 1 -->
                   <div class="row g-2 align-items-end mb-3">
                     <div class="col-12 col-md-5">
                       <label class="form-label small fw-semibold mb-1">IP o Hostname <span class="text-danger">*</span></label>
-                      <input type="text" id="upstream_0_host" name="upstreams[0][server_host]" class="form-control font-monospace" placeholder="ej. 192.168.0.2" value="<?= esc($up0['server_host'] ?? '') ?>">
+                      <input type="text" id="upstream_0_host" name="upstreams[0][server_host]" class="form-control font-monospace" placeholder="ej. 192.168.0.2" value="<?= esc($up0['server_host'] ?? '') ?>" <?= !$isLbMode ? 'disabled' : '' ?>>
                     </div>
                     <div class="col-6 col-md-3">
                       <label class="form-label small fw-semibold mb-1">Puerto <span class="text-danger">*</span></label>
-                      <input type="number" id="upstream_0_port" name="upstreams[0][server_port]" class="form-control font-monospace" placeholder="8080" min="1" max="65535" value="<?= esc($up0['server_port'] ?? 80) ?>">
+                      <input type="number" id="upstream_0_port" name="upstreams[0][server_port]" class="form-control font-monospace" placeholder="8080" min="1" max="65535" value="<?= esc((string)$up0['server_port']) ?>" <?= !$isLbMode ? 'disabled' : '' ?>>
                     </div>
                     <div class="col-6 col-md-4">
                       <label class="form-label small fw-semibold mb-1">Tipo de Servidor</label>
-                      <select name="upstreams[0][role]" class="select2 form-control">
+                      <select name="upstreams[0][role]" class="select2 form-control" <?= !$isLbMode ? 'disabled' : '' ?>>
                         <option value="active" <?= !$isUp0Backup ? 'selected' : '' ?>>Primario (Balanceo)</option>
                         <option value="backup" <?= $isUp0Backup ? 'selected' : '' ?>>Backup (Reserva)</option>
                       </select>
                     </div>
-                    <input type="hidden" name="upstreams[0][weight]" value="1">
-                    <input type="hidden" name="upstreams[0][max_fails]" value="3">
-                    <input type="hidden" name="upstreams[0][fail_timeout]" value="10">
+                    <input type="hidden" name="upstreams[0][weight]" value="1" <?= !$isLbMode ? 'disabled' : '' ?>>
+                    <input type="hidden" name="upstreams[0][max_fails]" value="3" <?= !$isLbMode ? 'disabled' : '' ?>>
+                    <input type="hidden" name="upstreams[0][fail_timeout]" value="10" <?= !$isLbMode ? 'disabled' : '' ?>>
                   </div>
 
                   <!-- Servidor 2 -->
                   <div class="row g-2 align-items-end mb-3">
                     <div class="col-12 col-md-5">
                       <label class="form-label small fw-semibold mb-1">IP o Hostname</label>
-                      <input type="text" id="upstream_1_host" name="upstreams[1][server_host]" class="form-control font-monospace" placeholder="ej. 192.168.0.3" value="<?= esc($up1['server_host'] ?? '') ?>">
+                      <input type="text" id="upstream_1_host" name="upstreams[1][server_host]" class="form-control font-monospace" placeholder="ej. 192.168.0.3" value="<?= esc($up1['server_host'] ?? '') ?>" <?= !$isLbMode ? 'disabled' : '' ?>>
                     </div>
                     <div class="col-6 col-md-3">
                       <label class="form-label small fw-semibold mb-1">Puerto</label>
-                      <input type="number" id="upstream_1_port" name="upstreams[1][server_port]" class="form-control font-monospace" placeholder="8080" min="1" max="65535" value="<?= esc($up1['server_port'] ?? 80) ?>">
+                      <input type="number" id="upstream_1_port" name="upstreams[1][server_port]" class="form-control font-monospace" placeholder="8080" min="1" max="65535" value="<?= esc((string)$up1['server_port']) ?>" <?= !$isLbMode ? 'disabled' : '' ?>>
                     </div>
                     <div class="col-6 col-md-4">
                       <label class="form-label small fw-semibold mb-1">Tipo de Servidor</label>
-                      <select name="upstreams[1][role]" class="select2 form-control">
+                      <select name="upstreams[1][role]" class="select2 form-control" <?= !$isLbMode ? 'disabled' : '' ?>>
                         <option value="active" <?= !$isUp1Backup ? 'selected' : '' ?>>Primario (Balanceo)</option>
                         <option value="backup" <?= $isUp1Backup ? 'selected' : '' ?>>Backup (Reserva)</option>
                       </select>
                     </div>
-                    <input type="hidden" name="upstreams[1][weight]" value="1">
-                    <input type="hidden" name="upstreams[1][max_fails]" value="3">
-                    <input type="hidden" name="upstreams[1][fail_timeout]" value="10">
+                    <input type="hidden" name="upstreams[1][weight]" value="1" <?= !$isLbMode ? 'disabled' : '' ?>>
+                    <input type="hidden" name="upstreams[1][max_fails]" value="3" <?= !$isLbMode ? 'disabled' : '' ?>>
+                    <input type="hidden" name="upstreams[1][fail_timeout]" value="10" <?= !$isLbMode ? 'disabled' : '' ?>>
                   </div>
                 </div>
               </div>
@@ -227,7 +297,17 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
             <div class="row g-3">
               <div class="col-12 col-md-6">
                 <div class="form-check form-switch mb-1">
-                  <input class="form-check-input" type="checkbox" role="switch" id="websocket_enabled" name="websocket_enabled" value="1" <?= $isWs ? 'checked' : '' ?>>
+                  <input class="form-check-input" type="checkbox" role="switch" id="enabled" name="enabled" value="1" <?= $isEnabled ? 'checked' : '' ?>>
+                  <label class="form-check-label fw-semibold" for="enabled">Host Habilitado en Nginx</label>
+                </div>
+                <div class="form-text text-muted ps-4">
+                  Activa o desactiva este proxy en el servidor Nginx sin perder su configuración.
+                </div>
+              </div>
+
+              <div class="col-12 col-md-6 proxy-target-col <?= $isRedirectMode ? 'd-none' : '' ?>">
+                <div class="form-check form-switch mb-1">
+                  <input class="form-check-input" type="checkbox" role="switch" id="websocket_enabled" name="websocket_enabled" value="1" <?= $isWs ? 'checked' : '' ?> <?= $isRedirectMode ? 'disabled' : '' ?>>
                   <label class="form-check-label fw-semibold" for="websocket_enabled">Soporte WebSockets</label>
                 </div>
                 <div class="form-text text-muted ps-4">
@@ -235,13 +315,56 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
                 </div>
               </div>
 
-              <div class="col-12 col-md-6">
+              <!-- Rate Limiting por Dominio (disponible para todos los modos) -->
+              <div class="col-12">
                 <div class="form-check form-switch mb-1">
-                  <input class="form-check-input" type="checkbox" role="switch" id="enabled" name="enabled" value="1" <?= $isEnabled ? 'checked' : '' ?>>
-                  <label class="form-check-label fw-semibold" for="enabled">Host Habilitado en Nginx</label>
+                  <input class="form-check-input" type="checkbox" role="switch" id="rate_limit_enabled" name="rate_limit_enabled" value="1" <?= $isRateLimit ? 'checked' : '' ?>>
+                  <label class="form-check-label fw-semibold" for="rate_limit_enabled">Rate Limiting</label>
                 </div>
                 <div class="form-text text-muted ps-4">
-                  Activa o desactiva este proxy en el servidor Nginx sin perder su configuración.
+                  Limita las peticiones por IP para este dominio en Nginx (responde HTTP <code>429</code> al superar el límite).
+                </div>
+              </div>
+
+              <div id="rateLimitPanel" class="col-12 <?= !$isRateLimit ? 'd-none' : '' ?>">
+                <div class="row g-3 pt-1 ps-md-4">
+                  <div class="col-6 col-md-3">
+                    <label for="rate_limit_requests" class="form-label small fw-semibold mb-1">Peticiones <span class="text-danger">*</span></label>
+                    <input type="number"
+                           id="rate_limit_requests"
+                           name="rate_limit_requests"
+                           class="form-control font-monospace <?= session('errors.rate_limit_requests') ? 'is-invalid' : '' ?>"
+                           min="1"
+                           max="10000"
+                           value="<?= esc((string) $rateLimitRequests) ?>">
+                  </div>
+
+                  <div class="col-6 col-md-3">
+                    <label for="rate_limit_unit" class="form-label small fw-semibold mb-1">Intervalo</label>
+                    <select id="rate_limit_unit" name="rate_limit_unit" class="select2 form-control">
+                      <option value="r/s" <?= $rateLimitUnit === 'r/s' ? 'selected' : '' ?>>Por segundo (r/s)</option>
+                      <option value="r/m" <?= $rateLimitUnit === 'r/m' ? 'selected' : '' ?>>Por minuto (r/m)</option>
+                    </select>
+                  </div>
+
+                  <div class="col-6 col-md-3">
+                    <label for="rate_limit_burst" class="form-label small fw-semibold mb-1">Ráfaga (Burst)</label>
+                    <input type="number"
+                           id="rate_limit_burst"
+                           name="rate_limit_burst"
+                           class="form-control font-monospace <?= session('errors.rate_limit_burst') ? 'is-invalid' : '' ?>"
+                           min="0"
+                           max="10000"
+                           value="<?= esc((string) $rateLimitBurst) ?>">
+                  </div>
+
+                  <div class="col-6 col-md-3">
+                    <label for="rate_limit_nodelay" class="form-label small fw-semibold mb-1">Sin retardo (<code>nodelay</code>)</label>
+                    <select id="rate_limit_nodelay" name="rate_limit_nodelay" class="select2 form-control">
+                      <option value="1" <?= $rateLimitNodelay ? 'selected' : '' ?>>Sí (nodelay)</option>
+                      <option value="0" <?= !$rateLimitNodelay ? 'selected' : '' ?>>No (con retardo)</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>
@@ -305,9 +428,9 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
               <!-- Panel Opciones HTTPS (cuando SSL está activo) -->
               <div class="col-12 d-none" id="sslOptionsPanel">
                 <div class="row g-3">
-                  <div class="col-12 col-md-6">
+                  <div class="col-12 col-md-6 proxy-target-col <?= $isRedirectMode ? 'd-none' : '' ?>">
                     <div class="form-check form-switch mb-1">
-                      <input class="form-check-input" type="checkbox" role="switch" id="force_https" name="force_https" value="1" <?= $isForce ? 'checked' : '' ?>>
+                      <input class="form-check-input" type="checkbox" role="switch" id="force_https" name="force_https" value="1" <?= $isForce ? 'checked' : '' ?> <?= $isRedirectMode ? 'disabled' : '' ?>>
                       <label class="form-check-label fw-semibold" for="force_https">Forzar Redirección HTTPS</label>
                     </div>
                     <div class="form-text text-muted ps-4">

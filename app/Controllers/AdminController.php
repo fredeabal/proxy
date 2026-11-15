@@ -589,10 +589,12 @@ class AdminController extends BaseController
         }
 
         $rawName  = pathinfo($file->getClientName(), PATHINFO_FILENAME);
-        $safeBase = preg_replace('/[^a-zA-Z0-9._\-]/', '_', $rawName);
-        $safeBase = trim((string) $safeBase, '._-');
+        $safeBase = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $rawName);
+        $safeBase = trim((string) $safeBase, '_-');
         if ($safeBase === '') {
             $safeBase = 'backup_imported_' . date('Y-m-d_His');
+        } elseif (!str_starts_with($safeBase, 'backup_')) {
+            $safeBase = 'backup_' . $safeBase;
         }
 
         $backupDir = WRITEPATH . 'backups';

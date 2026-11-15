@@ -384,33 +384,55 @@ class BackupManager
             $sourceSqlite = new SQLite3($tempRestoreDb, SQLITE3_OPEN_READONLY);
 
             // Leer tablas a restaurar desde la instantánea verificada
-            $proxies  = $this->fetchAllRows($sourceSqlite, 'proxy_hosts');
-            $certs    = $this->fetchAllRows($sourceSqlite, 'certificates');
-            $settings = $this->fetchAllRows($sourceSqlite, 'settings');
+            $proxies   = $this->fetchAllRows($sourceSqlite, 'proxy_hosts');
+            $certs     = $this->fetchAllRows($sourceSqlite, 'certificates');
+            $settings  = $this->fetchAllRows($sourceSqlite, 'settings');
+            $prefixedUpstreams = $this->db->prefixTable('proxy_upstreams');
+            $hasUpstreamsInBackup = (bool) $sourceSqlite->querySingle(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '" . SQLite3::escapeString($prefixedUpstreams) . "'"
+            );
+            $upstreams = $hasUpstreamsInBackup ? $this->fetchAllRows($sourceSqlite, 'proxy_upstreams') : [];
             $sourceSqlite->close();
 
-            $this->db->transStart();
+            $this->db->query('PRAGMA foreign_keys = OFF');
+            try {
+                $this->db->transStart();
 
-            // Restaurar certificados, proxy_hosts y settings
-            $this->db->table('proxy_hosts')->emptyTable();
-            foreach ($proxies as $row) {
-                $this->db->table('proxy_hosts')->insert($row);
-            }
+                $restoreTables = [
+                    'certificates' => $certs,
+                    'proxy_hosts'  => $proxies,
+                    'settings'     => $settings,
+                ];
+                if ($this->db->tableExists('proxy_upstreams')) {
+                    $restoreTables['proxy_upstreams'] = $upstreams;
+                }
 
-            $this->db->table('certificates')->emptyTable();
-            foreach ($certs as $row) {
-                $this->db->table('certificates')->insert($row);
-            }
+                foreach ($restoreTables as $table => $rows) {
+                    $this->db->table($table)->emptyTable();
+                    if ($rows === []) {
+                        continue;
+                    }
+                    $allowedCols = array_flip($this->db->getFieldNames($table));
+                    foreach ($rows as $row) {
+                        $filtered = array_intersect_key($row, $allowedCols);
+                        if ($filtered !== []) {
+                            $this->db->table($table)->insert($filtered);
+                        }
+                    }
+                }
 
-            $this->db->table('settings')->emptyTable();
-            foreach ($settings as $row) {
-                $this->db->table('settings')->insert($row);
-            }
+                $dbError = $this->db->transStatus() === false ? $this->db->error() : null;
+                $this->db->transComplete();
 
-            $this->db->transComplete();
-
-            if ($this->db->transStatus() === false) {
-                throw new \RuntimeException('La transacción de restauración en SQLite falló.');
+                if ($this->db->transStatus() === false) {
+                    $detail = trim((string) ($dbError['message'] ?? ''));
+                    if ($detail !== '' && strtolower($detail) !== 'not an error') {
+                        throw new \RuntimeException('La transacción de restauración en SQLite falló: ' . $detail);
+                    }
+                    throw new \RuntimeException('La transacción de restauración en SQLite falló.');
+                }
+            } finally {
+                $this->db->query('PRAGMA foreign_keys = ON');
             }
 
             // Re-aplicar configuraciones de Nginx para los hosts activos restaurados
