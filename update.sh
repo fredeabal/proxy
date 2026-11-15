@@ -98,6 +98,12 @@ composer install --no-dev --optimize-autoloader --no-interaction
 
 # 5. Ejecutar migraciones pendientes
 echo -e "${YELLOW}⏳ [3/6] Aplicando migraciones de base de datos...${NC}"
+
+# Asegurar módulo Nginx stream (TCP/UDP) si no está instalado
+if command -v apt-get &> /dev/null && [ ! -f /usr/lib/nginx/modules/ngx_stream_module.so ]; then
+    echo -e "${YELLOW}⏳ Instalando módulo Nginx stream (libnginx-mod-stream)...${NC}"
+    apt-get update -qq && apt-get install -y -qq libnginx-mod-stream || true
+fi
 php spark migrate --all
 
 # 6. Actualizar Ejecutor Privilegiado y configuración global de Nginx
