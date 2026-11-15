@@ -71,7 +71,39 @@ EOF
             chmod 0644 /etc/nginx/conf.d/proxy_manager_geoip.conf 2>/dev/null || true
         fi
 
-        if [ ! -f /etc/nginx/conf.d/00_default_server.conf ]; then
+        if [ ! -f /etc/nginx/conf.d/00_default_server.conf ] || ! grep -q "listen 443 ssl default_server" /etc/nginx/conf.d/00_default_server.conf 2>/dev/null; then
+            mkdir -p /etc/nginx/ssl 2>/dev/null || true
+            if [ ! -f /etc/nginx/ssl/catchall.crt ] || [ ! -f /etc/nginx/ssl/catchall.key ]; then
+                openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+                    -keyout /etc/nginx/ssl/catchall.key \
+                    -out /etc/nginx/ssl/catchall.crt \
+                    -subj "/CN=invalid.local" >/dev/null 2>&1 || true
+                chmod 0600 /etc/nginx/ssl/catchall.key 2>/dev/null || true
+                chmod 0644 /etc/nginx/ssl/catchall.crt 2>/dev/null || true
+            fi
+
+            SSL_CATCHALL_BLOCK=""
+            if [ -f /etc/nginx/ssl/catchall.crt ] && [ -f /etc/nginx/ssl/catchall.key ]; then
+                SSL_CATCHALL_BLOCK=$(cat << 'SSLEOF'
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name _;
+
+    ssl_certificate /etc/nginx/ssl/catchall.crt;
+    ssl_certificate_key /etc/nginx/ssl/catchall.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        default_type text/html;
+        return 404 '<!DOCTYPE html><html><head><meta charset="utf-8"><title>404 - No encontrado</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}.box{background:#1e293b;padding:2.5rem;border-radius:1rem;border:1px solid #334155;max-width:500px}h1{font-size:3rem;margin:0 0 1rem;color:#f43f5e}p{color:#94a3b8;line-height:1.5}</style></head><body><div class="box"><h1>404</h1><h2>Servicio no encontrado</h2><p>El servicio solicitado no est&aacute; disponible o no existe en este servidor.</p></div></body></html>';
+    }
+}
+SSLEOF
+)
+            fi
+
             cat << 'EOF' > /etc/nginx/conf.d/00_default_server.conf
 # ==============================================================================
 # Reverse Proxy Manager - Catch-All Default Server
@@ -94,6 +126,9 @@ server {
     }
 }
 EOF
+            if [ -n "${SSL_CATCHALL_BLOCK}" ]; then
+                printf '%s\n' "${SSL_CATCHALL_BLOCK}" >> /etc/nginx/conf.d/00_default_server.conf
+            fi
             chmod 0644 /etc/nginx/conf.d/00_default_server.conf 2>/dev/null || true
         fi
     fi
