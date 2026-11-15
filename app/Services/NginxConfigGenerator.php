@@ -235,7 +235,7 @@ class NginxConfigGenerator
             $isBackup = !empty($srv['is_backup']);
             $isDown = !empty($srv['is_down']);
 
-            $serverLine = "    server {$host}:{$port}";
+            $serverLine = "    server " . $this->formatHostForUrl($host) . ":{$port}";
             if ($weight > 1 && $algorithm !== 'ip_hash') {
                 $serverLine .= " weight={$weight}";
             }
@@ -280,7 +280,7 @@ class NginxConfigGenerator
         } else {
             $host = trim((string) ($proxy['forward_host'] ?? '127.0.0.1'));
             $port = (int) ($proxy['forward_port'] ?? 80);
-            $proxyPassUrl = "{$scheme}://{$host}:{$port}";
+            $proxyPassUrl = "{$scheme}://" . $this->formatHostForUrl($host) . ":{$port}";
         }
 
         // Timeouts configurables (1 - 3600s)
@@ -345,6 +345,10 @@ class NginxConfigGenerator
             $lines[] = "{$padInner}proxy_ssl_server_name on;";
             $lines[] = "{$padInner}proxy_ssl_name {$sniName};";
             $lines[] = "{$padInner}proxy_ssl_verify {$verifyState};";
+            if ($sslVerify) {
+                $lines[] = "{$padInner}proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;";
+                $lines[] = "{$padInner}proxy_ssl_verify_depth 2;";
+            }
         }
 
         if ($ws) {
@@ -353,6 +357,11 @@ class NginxConfigGenerator
             $lines[] = "{$padInner}proxy_http_version 1.1;";
             $lines[] = "{$padInner}proxy_set_header Upgrade \$http_upgrade;";
             $lines[] = "{$padInner}proxy_set_header Connection \"upgrade\";";
+        } elseif ($isLb) {
+            $lines[] = '';
+            $lines[] = "{$padInner}# Reutilización de conexiones keepalive hacia el upstream";
+            $lines[] = "{$padInner}proxy_http_version 1.1;";
+            $lines[] = "{$padInner}proxy_set_header Connection \"\";";
         }
 
         $customHeaders = $this->renderCustomHeaders($proxy, $indent + 4);
@@ -490,11 +499,25 @@ class NginxConfigGenerator
 
         // Si existen certificados simulados o locales definidos en el proxy
         if (!empty($proxy['certificate_path']) && !empty($proxy['private_key_path'])) {
+            $this->assertSafePath((string) $proxy['certificate_path']);
+            $this->assertSafePath((string) $proxy['private_key_path']);
             $cert = $proxy['certificate_path'];
             $key  = $proxy['private_key_path'];
         }
 
         return ['cert' => $cert, 'key' => $key];
+    }
+
+    /**
+     * Formatea un host para URL/upstream de Nginx, envolviendo direcciones IPv6 entre corchetes.
+     */
+    protected function formatHostForUrl(string $host): string
+    {
+        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+            return "[{$host}]";
+        }
+
+        return $host;
     }
 
     /**

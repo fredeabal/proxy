@@ -62,8 +62,9 @@ if [ -n "$NEW_URL" ]; then
         NEW_URL="${NEW_URL}/"
     fi
 
-    # Actualizar en .env
-    sed -i "s|^app.baseURL.*|app.baseURL = '${NEW_URL}'|g" "$INSTALL_DIR/.env"
+    # Actualizar en .env escapando caracteres especiales de sed
+    SAFE_NEW_URL=$(printf '%s\n' "$NEW_URL" | sed 's/[&|\\]/\\&/g')
+    sed -i "s|^app.baseURL.*|app.baseURL = '${SAFE_NEW_URL}'|g" "$INSTALL_DIR/.env"
     echo -e "${GREEN}✅ URL Base actualizada internamente a: ${NEW_URL}${NC}"
 
     # Extraer dominio y puerto para Nginx si existe
@@ -72,10 +73,12 @@ if [ -n "$NEW_URL" ]; then
         EXTRACTED_PORT=$(echo "$NEW_URL" | grep -oE ':[0-9]+' | tr -d ':' || echo "")
         
         if [ -n "$CLEAN_DOMAIN" ]; then
-            sed -i "s|server_name .*|server_name $CLEAN_DOMAIN;|g" /etc/nginx/sites-available/proxy-manager
+            SAFE_CLEAN_DOMAIN=$(printf '%s\n' "$CLEAN_DOMAIN" | sed 's/[&|\\]/\\&/g')
+            sed -i -E "s|^([[:space:]]*server_name[[:space:]]+).*|\1${SAFE_CLEAN_DOMAIN};|" /etc/nginx/sites-available/proxy-manager
         fi
         if [ -n "$EXTRACTED_PORT" ]; then
-            sed -i "s|listen .*|listen $EXTRACTED_PORT;|g" /etc/nginx/sites-available/proxy-manager
+            sed -i -E "s|^([[:space:]]*listen[[:space:]]+)[0-9]+;|\1${EXTRACTED_PORT};|" /etc/nginx/sites-available/proxy-manager
+            sed -i -E "s|^([[:space:]]*listen[[:space:]]+\[::\]:)[0-9]+;|\1${EXTRACTED_PORT};|" /etc/nginx/sites-available/proxy-manager
         fi
         echo -e "${GREEN}✅ Configuración de Nginx actualizada${NC}"
     fi
@@ -85,7 +88,6 @@ fi
 # 3. Sincronizar repositorio con GitHub
 echo -e "${YELLOW}⏳ [1/6] Descargando última versión desde GitHub...${NC}"
 git config --global --add safe.directory "$INSTALL_DIR"
-git stash > /dev/null 2>&1 || true
 git fetch origin
 git reset --hard origin/main
 
@@ -98,7 +100,7 @@ composer install --no-dev --optimize-autoloader --no-interaction
 echo -e "${YELLOW}⏳ [3/6] Aplicando migraciones de base de datos...${NC}"
 php spark migrate --all
 
-# 6. Actualizar Ejecutor Privilegiado y configuración Cloudflare Real-IP
+# 6. Actualizar Ejecutor Privilegiado y configuración global de Nginx
 echo -e "${YELLOW}⏳ [4/6] Actualizando Ejecutor Privilegiado (/usr/local/bin/proxy-executor)...${NC}"
 if [ -f "${INSTALL_DIR}/executor/proxy-executor.sh" ]; then
     cp "${INSTALL_DIR}/executor/proxy-executor.sh" /usr/local/bin/proxy-executor
@@ -110,74 +112,9 @@ mkdir -p /var/www/letsencrypt/.well-known/acme-challenge
 chown -R www-data:www-data /var/www/letsencrypt 2>/dev/null || true
 chmod -R 755 /var/www/letsencrypt 2>/dev/null || true
 
-mkdir -p /etc/nginx/conf.d
-if [ ! -f /etc/nginx/conf.d/proxy_manager_geoip.conf ]; then
-cat << 'EOF' > /etc/nginx/conf.d/proxy_manager_geoip.conf
-# ==============================================================================
-# Reverse Proxy Manager - Configuración GeoIP2 por defecto (Desactivado)
-# ==============================================================================
-map $remote_addr $geoip_blocked {
-    default 0;
-}
-EOF
+if [ -x /usr/local/bin/proxy-executor ]; then
+    /usr/local/bin/proxy-executor ensure-defaults
 fi
-
-if [ ! -f /etc/nginx/conf.d/00_default_server.conf ]; then
-cat << 'EOF' > /etc/nginx/conf.d/00_default_server.conf
-# ==============================================================================
-# Reverse Proxy Manager - Catch-All Default Server
-# Atrapa peticiones por IP o dominios no configurados / caídos
-# ==============================================================================
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-
-    # Permitir retos ACME de Let's Encrypt si aplican
-    location ^~ /.well-known/acme-challenge/ {
-        default_type "text/plain";
-        root /var/www/letsencrypt;
-    }
-
-    location / {
-        default_type text/html;
-        return 404 '<!DOCTYPE html><html><head><meta charset="utf-8"><title>404 - No encontrado</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}.box{background:#1e293b;padding:2.5rem;border-radius:1rem;border:1px solid #334155;max-width:500px}h1{font-size:3rem;margin:0 0 1rem;color:#f43f5e}p{color:#94a3b8;line-height:1.5}</style></head><body><div class="box"><h1>404</h1><h2>Servicio no encontrado</h2><p>El servicio solicitado no est&aacute; disponible o no existe en este servidor.</p></div></body></html>';
-    }
-}
-EOF
-chmod 0644 /etc/nginx/conf.d/00_default_server.conf 2>/dev/null || true
-fi
-cat << 'EOF' > /etc/nginx/conf.d/proxy_manager_cloudflare_realip.conf
-# ==============================================================================
-# Reverse Proxy Manager - Restauración de IP Real para Cloudflare (CF-Connecting-IP)
-# ==============================================================================
-set_real_ip_from 173.245.48.0/20;
-set_real_ip_from 103.21.244.0/22;
-set_real_ip_from 103.22.200.0/22;
-set_real_ip_from 103.31.4.0/22;
-set_real_ip_from 141.101.64.0/18;
-set_real_ip_from 108.162.192.0/18;
-set_real_ip_from 190.93.240.0/20;
-set_real_ip_from 188.114.96.0/20;
-set_real_ip_from 197.234.240.0/22;
-set_real_ip_from 198.41.128.0/17;
-set_real_ip_from 162.158.0.0/15;
-set_real_ip_from 104.16.0.0/13;
-set_real_ip_from 104.24.0.0/14;
-set_real_ip_from 172.64.0.0/13;
-set_real_ip_from 131.0.72.0/22;
-set_real_ip_from 2400:cb00::/32;
-set_real_ip_from 2606:4700::/32;
-set_real_ip_from 2803:f800::/32;
-set_real_ip_from 2405:b500::/32;
-set_real_ip_from 2405:8100::/32;
-set_real_ip_from 2a06:98c0::/29;
-set_real_ip_from 2c0f:f248::/32;
-real_ip_header CF-Connecting-IP;
-real_ip_recursive on;
-EOF
-touch /etc/nginx/conf.d/proxy_manager_banned_ips.conf
-chmod 0644 /etc/nginx/conf.d/proxy_manager_cloudflare_realip.conf /etc/nginx/conf.d/proxy_manager_banned_ips.conf 2>/dev/null || true
 
 # Asegurar que el vhost del panel mapee 403 a 404 en Nginx si no está configurado
 if [ -f /etc/nginx/sites-available/proxy-manager ] && ! grep -q "error_page 403 =404" /etc/nginx/sites-available/proxy-manager; then

@@ -75,6 +75,11 @@ INSTALL_DIR="/var/www/proxy-manager"
 if [ ! -f "./spark" ]; then
     echo -e "${YELLOW}⏳ [2/7] Descargando el código desde GitHub...${NC}"
     if [ -d "$INSTALL_DIR" ]; then
+        if [ -f "$INSTALL_DIR/writable/database/database.sqlite" ] || [ -f "$INSTALL_DIR/.env" ]; then
+            echo -e "${RED}❌ Error: Ya existe una instalación con datos en ${INSTALL_DIR}.${NC}"
+            echo -e "Usa ${YELLOW}update.sh${NC} para actualizar sin perder tu base de datos ni certificados."
+            exit 1
+        fi
         cd /tmp
         rm -rf "$INSTALL_DIR"
     fi
@@ -118,10 +123,11 @@ mkdir -p "$DB_DIR"
 DB_PATH="${DB_DIR}/database.sqlite"
 
 # Ajustar variables en .env (iniciar en development para migraciones/seeders)
+SAFE_DOMAIN=$(printf '%s\n' "$DOMAIN" | sed 's/[&|\\]/\\&/g')
 sed -i "s|# CI_ENVIRONMENT = .*|CI_ENVIRONMENT = development|g" .env
 sed -i "s|CI_ENVIRONMENT = .*|CI_ENVIRONMENT = development|g" .env
-sed -i "s|# app.baseURL = .*|app.baseURL = 'http://${DOMAIN}:${PORT}/'|g" .env
-sed -i "s|app.baseURL = .*|app.baseURL = 'http://${DOMAIN}:${PORT}/'|g" .env
+sed -i "s|# app.baseURL = .*|app.baseURL = 'http://${SAFE_DOMAIN}:${PORT}/'|g" .env
+sed -i "s|app.baseURL = .*|app.baseURL = 'http://${SAFE_DOMAIN}:${PORT}/'|g" .env
 sed -i "s|# database.default.hostname = .*|database.default.hostname = localhost|g" .env
 sed -i "s|# database.default.database = .*|database.default.database = ${DB_PATH}|g" .env
 sed -i "s|# database.default.DBDriver = .*|database.default.DBDriver = SQLite3|g" .env
@@ -134,7 +140,8 @@ echo -e "\n${YELLOW}⏳ [5/7] Configurando la base de datos y ejecutando migraci
 mkdir -p "${INSTALL_DIR}/writable/backups"
 mkdir -p "${INSTALL_DIR}/writable/staging"
 mkdir -p "${INSTALL_DIR}/writable/logs"
-chmod -R 777 "${INSTALL_DIR}/writable"
+chown -R www-data:www-data "${INSTALL_DIR}/writable"
+chmod -R 770 "${INSTALL_DIR}/writable"
 
 php spark migrate --all
 php spark db:seed AdminSeeder
@@ -152,79 +159,11 @@ mkdir -p /var/www/letsencrypt/.well-known/acme-challenge
 chown -R www-data:www-data /var/www/letsencrypt
 chmod -R 755 /var/www/letsencrypt
 
-# Directorios Nginx
-mkdir -p /etc/nginx/sites-available
-mkdir -p /etc/nginx/sites-enabled
-mkdir -p /etc/nginx/conf.d
-
-# Configuración de Cloudflare Real-IP y archivo de bloqueo de IPs para Nginx
-cat << 'EOF' > /etc/nginx/conf.d/proxy_manager_geoip.conf
-# ==============================================================================
-# Reverse Proxy Manager - Configuración GeoIP2 por defecto (Desactivado)
-# ==============================================================================
-map $remote_addr $geoip_blocked {
-    default 0;
-}
-EOF
-
-cat << 'EOF' > /etc/nginx/conf.d/00_default_server.conf
-# ==============================================================================
-# Reverse Proxy Manager - Catch-All Default Server
-# Atrapa peticiones por IP o dominios no configurados / caídos
-# ==============================================================================
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-
-    # Permitir retos ACME de Let's Encrypt si aplican
-    location ^~ /.well-known/acme-challenge/ {
-        default_type "text/plain";
-        root /var/www/letsencrypt;
-    }
-
-    location / {
-        default_type text/html;
-        return 404 '<!DOCTYPE html><html><head><meta charset="utf-8"><title>404 - No encontrado</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}.box{background:#1e293b;padding:2.5rem;border-radius:1rem;border:1px solid #334155;max-width:500px}h1{font-size:3rem;margin:0 0 1rem;color:#f43f5e}p{color:#94a3b8;line-height:1.5}</style></head><body><div class="box"><h1>404</h1><h2>Servicio no encontrado</h2><p>El servicio solicitado no est&aacute; disponible o no existe en este servidor.</p></div></body></html>';
-    }
-}
-EOF
-cat << 'EOF' > /etc/nginx/conf.d/proxy_manager_cloudflare_realip.conf
-# ==============================================================================
-# Reverse Proxy Manager - Restauración de IP Real para Cloudflare (CF-Connecting-IP)
-# ==============================================================================
-set_real_ip_from 173.245.48.0/20;
-set_real_ip_from 103.21.244.0/22;
-set_real_ip_from 103.22.200.0/22;
-set_real_ip_from 103.31.4.0/22;
-set_real_ip_from 141.101.64.0/18;
-set_real_ip_from 108.162.192.0/18;
-set_real_ip_from 190.93.240.0/20;
-set_real_ip_from 188.114.96.0/20;
-set_real_ip_from 197.234.240.0/22;
-set_real_ip_from 198.41.128.0/17;
-set_real_ip_from 162.158.0.0/15;
-set_real_ip_from 104.16.0.0/13;
-set_real_ip_from 104.24.0.0/14;
-set_real_ip_from 172.64.0.0/13;
-set_real_ip_from 131.0.72.0/22;
-set_real_ip_from 2400:cb00::/32;
-set_real_ip_from 2606:4700::/32;
-set_real_ip_from 2803:f800::/32;
-set_real_ip_from 2405:b500::/32;
-set_real_ip_from 2405:8100::/32;
-set_real_ip_from 2a06:98c0::/29;
-set_real_ip_from 2c0f:f248::/32;
-real_ip_header CF-Connecting-IP;
-real_ip_recursive on;
-EOF
-touch /etc/nginx/conf.d/proxy_manager_banned_ips.conf
-chmod 0644 /etc/nginx/conf.d/proxy_manager_cloudflare_realip.conf /etc/nginx/conf.d/proxy_manager_banned_ips.conf
-
-# Instalar proxy-executor
+# Instalar proxy-executor y sincronizar configuraciones globales por defecto de Nginx
 cp "${INSTALL_DIR}/executor/proxy-executor.sh" /usr/local/bin/proxy-executor
 chown root:root /usr/local/bin/proxy-executor
 chmod 0755 /usr/local/bin/proxy-executor
+/usr/local/bin/proxy-executor ensure-defaults
 
 # Regla de sudoers para que www-data ejecute el script sin contraseña
 cat << 'EOF' > /etc/sudoers.d/proxy-manager

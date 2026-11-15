@@ -29,6 +29,29 @@ error_exit() {
     exit "${2:-1}"
 }
 
+# Valida que un archivo de staging exista y resida dentro de un directorio autorizado
+resolve_authorized_staging() {
+    local input_file="$1"
+    local not_found_code="${2:-7}"
+    local unauthorized_code="${3:-8}"
+    local real_path
+
+    real_path="$(realpath -q "${input_file}" 2>/dev/null || echo "")"
+    if [ -z "${real_path}" ] || [ ! -f "${real_path}" ]; then
+        error_exit "Archivo de staging no encontrado o no válido: ${input_file}" "${not_found_code}"
+    fi
+
+    case "${real_path}" in
+        "${STAGING_DIR}"/*|/var/www/*/writable/staging/*)
+            ;;
+        *)
+            error_exit "Ruta no autorizada para archivo staging: ${real_path}" "${unauthorized_code}"
+            ;;
+    esac
+
+    echo "${real_path}"
+}
+
 # Asegurar que existan los archivos mínimos en conf.d para que Nginx siempre valide variables globales ($geoip_blocked)
 # y que exista un bloque default_server (catch-all) para evitar que peticiones no coincidentes caigan en otros vhosts
 ensure_confd_defaults() {
@@ -76,6 +99,44 @@ EOF
     fi
 }
 
+# Sincroniza los archivos base globales de Nginx (GeoIP por defecto, Catch-All, Cloudflare Real-IP y Banned IPs)
+sync_global_defaults() {
+    mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d
+    ensure_confd_defaults
+
+    cat << 'EOF' > /etc/nginx/conf.d/proxy_manager_cloudflare_realip.conf
+# ==============================================================================
+# Reverse Proxy Manager - Restauración de IP Real para Cloudflare (CF-Connecting-IP)
+# ==============================================================================
+set_real_ip_from 173.245.48.0/20;
+set_real_ip_from 103.21.244.0/22;
+set_real_ip_from 103.22.200.0/22;
+set_real_ip_from 103.31.4.0/22;
+set_real_ip_from 141.101.64.0/18;
+set_real_ip_from 108.162.192.0/18;
+set_real_ip_from 190.93.240.0/20;
+set_real_ip_from 188.114.96.0/20;
+set_real_ip_from 197.234.240.0/22;
+set_real_ip_from 198.41.128.0/17;
+set_real_ip_from 162.158.0.0/15;
+set_real_ip_from 104.16.0.0/13;
+set_real_ip_from 104.24.0.0/14;
+set_real_ip_from 172.64.0.0/13;
+set_real_ip_from 131.0.72.0/22;
+set_real_ip_from 2400:cb00::/32;
+set_real_ip_from 2606:4700::/32;
+set_real_ip_from 2803:f800::/32;
+set_real_ip_from 2405:b500::/32;
+set_real_ip_from 2405:8100::/32;
+set_real_ip_from 2a06:98c0::/29;
+set_real_ip_from 2c0f:f248::/32;
+real_ip_header CF-Connecting-IP;
+real_ip_recursive on;
+EOF
+    touch /etc/nginx/conf.d/proxy_manager_banned_ips.conf
+    chmod 0644 /etc/nginx/conf.d/proxy_manager_cloudflare_realip.conf /etc/nginx/conf.d/proxy_manager_banned_ips.conf 2>/dev/null || true
+}
+
 # Validación básica de número de argumentos
 if [ $# -lt 1 ]; then
     error_exit "Uso: $0 <action> [argumentos...]" 2
@@ -101,9 +162,9 @@ case "${ACTION}" in
             error_exit "Archivo de configuración no encontrado o no válido." 3
         fi
 
-        # Comprobar que esté dentro de sites-available o staging
+        # Comprobar que esté dentro de sites-available o staging autorizado
         case "${REAL_PATH}" in
-            "${SITES_AVAILABLE}"/*|"${STAGING_DIR}"/*|/tmp/*|/var/tmp/*)
+            "${SITES_AVAILABLE}"/*|"${STAGING_DIR}"/*|/var/www/*/writable/staging/*)
                 ;;
             *)
                 error_exit "Ruta no autorizada para validación: ${REAL_PATH}" 4
@@ -113,6 +174,8 @@ case "${ACTION}" in
         # Para validar un archivo vhost (que contiene bloques server {}),
         # lo envolvemos temporalmente en un bloque http {} completo.
         TEST_WRAPPER=$(mktemp /tmp/nginx_val_XXXXXX.conf)
+        trap 'rm -f "${TEST_WRAPPER:-}"' EXIT
+
         MIME_LINE=""
         if [ -f /etc/nginx/mime.types ]; then
             MIME_LINE="include /etc/nginx/mime.types;"
@@ -120,28 +183,38 @@ case "${ACTION}" in
 
         # Incluir configuraciones de conf.d (como GeoIP2 maps o variables compartidas) si existen
         CONFD_LINE=""
+        GEOIP_FALLBACK=""
         if [ -d /etc/nginx/conf.d ]; then
             CONFD_LINE="include /etc/nginx/conf.d/*.conf;"
+        fi
+        if ! grep -rq '\$geoip_blocked' /etc/nginx/conf.d/*.conf 2>/dev/null; then
+            GEOIP_FALLBACK=$'    map $remote_addr $geoip_blocked {\n        default 0;\n    }'
         fi
 
         cat <<EOF > "${TEST_WRAPPER}"
 events { worker_connections 1024; }
 http {
     ${MIME_LINE}
-    # Definición por defecto de variables requeridas por vhosts si no están en conf.d
-    map \$remote_addr \$geoip_blocked {
-        default 0;
-    }
+${GEOIP_FALLBACK}
     ${CONFD_LINE}
     include "${REAL_PATH}";
 }
 EOF
+        set +e
         VALIDATION_OUTPUT=$(nginx -t -c "${TEST_WRAPPER}" 2>&1)
         EXIT_CODE=$?
+        set -e
         rm -f "${TEST_WRAPPER}"
+        trap - EXIT
 
         echo "${VALIDATION_OUTPUT}"
         exit ${EXIT_CODE}
+        ;;
+
+    ensure-defaults)
+        sync_global_defaults
+        echo "OK: Configuraciones globales por defecto sincronizadas."
+        exit 0
         ;;
 
     apply-host)
@@ -159,28 +232,25 @@ EOF
 
         SRC_FILE="${SITES_AVAILABLE}/${HOST_ID}.conf"
         DST_LINK="${SITES_ENABLED}/${HOST_ID}.conf"
+        BACKUP_FILE=""
+        HAD_LINK=0
+        if [ -L "${DST_LINK}" ] || [ -e "${DST_LINK}" ]; then
+            HAD_LINK=1
+        fi
 
-        # Si se suministra un archivo staging, copiarlo de forma segura a sites-available
+        # Si se suministra un archivo staging, respaldar el anterior y copiar de forma segura a sites-available
         if [ $# -ge 2 ]; then
-            STAGING_FILE="$2"
-            REAL_STAGING="$(realpath -q "${STAGING_FILE}" 2>/dev/null || echo "")"
-            if [ -z "${REAL_STAGING}" ] || [ ! -f "${REAL_STAGING}" ]; then
-                error_exit "Archivo de staging no encontrado o no válido." 7
+            REAL_STAGING="$(resolve_authorized_staging "$2" 7 8)"
+            if [ -f "${SRC_FILE}" ]; then
+                BACKUP_FILE=$(mktemp /tmp/nginx_host_bak_XXXXXX.conf)
+                cp -p "${SRC_FILE}" "${BACKUP_FILE}"
             fi
-
-            case "${REAL_STAGING}" in
-                "${STAGING_DIR}"/*|/var/www/*/writable/staging/*|/tmp/*|/var/tmp/*)
-                    ;;
-                *)
-                    error_exit "Ruta no autorizada para archivo staging: ${REAL_STAGING}" 8
-                    ;;
-            esac
-
             cp "${REAL_STAGING}" "${SRC_FILE}"
             chmod 644 "${SRC_FILE}"
         fi
 
         if [ ! -f "${SRC_FILE}" ]; then
+            rm -f "${BACKUP_FILE}"
             error_exit "El archivo origen ${SRC_FILE} no existe." 7
         fi
 
@@ -189,10 +259,20 @@ EOF
 
         # Validar la configuración global tras el cambio
         if ! nginx -t 2>&1; then
-            # Rollback: deshacer symlink si rompe la configuración
-            rm -f "${DST_LINK}"
-            error_exit "La nueva configuración es inválida. Se ha revertido el enlace en sites-enabled." 8
+            # Rollback completo: restaurar archivo previo y estado del enlace
+            if [ -n "${BACKUP_FILE}" ] && [ -f "${BACKUP_FILE}" ]; then
+                mv -f "${BACKUP_FILE}" "${SRC_FILE}"
+                chmod 644 "${SRC_FILE}"
+            elif [ $# -ge 2 ]; then
+                rm -f "${SRC_FILE}"
+            fi
+            if [ "${HAD_LINK}" -eq 0 ]; then
+                rm -f "${DST_LINK}"
+            fi
+            error_exit "La nueva configuración es inválida. Se ha revertido al estado anterior." 8
         fi
+
+        rm -f "${BACKUP_FILE}"
 
         # Recargar Nginx de forma no disruptiva
         systemctl reload nginx 2>&1
@@ -215,20 +295,7 @@ EOF
 
         # Si se suministra un archivo staging, copiarlo de forma segura a sites-available
         if [ $# -ge 2 ]; then
-            STAGING_FILE="$2"
-            REAL_STAGING="$(realpath -q "${STAGING_FILE}" 2>/dev/null || echo "")"
-            if [ -z "${REAL_STAGING}" ] || [ ! -f "${REAL_STAGING}" ]; then
-                error_exit "Archivo de staging no encontrado o no válido." 7
-            fi
-
-            case "${REAL_STAGING}" in
-                "${STAGING_DIR}"/*|/var/www/*/writable/staging/*|/tmp/*|/var/tmp/*)
-                    ;;
-                *)
-                    error_exit "Ruta no autorizada para archivo staging: ${REAL_STAGING}" 8
-                    ;;
-            esac
-
+            REAL_STAGING="$(resolve_authorized_staging "$2" 7 8)"
             cp "${REAL_STAGING}" "${SRC_FILE}"
             chmod 644 "${SRC_FILE}"
         fi
@@ -266,8 +333,10 @@ EOF
         rm -f "${SRC_FILE}"
 
         # Validar y recargar
-        nginx -t 2>&1 || true
-        systemctl reload nginx 2>&1 || true
+        if ! nginx -t 2>&1; then
+            error_exit "Fallo en la configuración tras eliminar el host ${HOST_ID}." 14
+        fi
+        systemctl reload nginx 2>&1
         echo "OK: Host ${HOST_ID} eliminado por completo."
         exit 0
         ;;
@@ -402,19 +471,7 @@ EOF
             error_exit "Uso: $0 sync-banned-ips <staging_file>" 25
         fi
 
-        STAGING_FILE="$1"
-        if [ ! -f "${STAGING_FILE}" ]; then
-            error_exit "Archivo de staging de IPs no encontrado: ${STAGING_FILE}" 26
-        fi
-
-        REAL_STAGING="$(realpath -q "${STAGING_FILE}" 2>/dev/null || echo "")"
-        if [[ -z "${REAL_STAGING}" ]]; then
-            error_exit "No se pudo resolver la ruta del archivo de IPs bloqueadas." 27
-        fi
-
-        if [[ "${REAL_STAGING}" != "${STAGING_DIR}/"* ]] && [[ "${REAL_STAGING}" != /var/www/*/writable/staging/* ]] && [[ "${REAL_STAGING}" != /tmp/* ]] && [[ "${REAL_STAGING}" != /var/tmp/* ]]; then
-            error_exit "Ruta de staging no autorizada: ${REAL_STAGING}" 28
-        fi
+        REAL_STAGING="$(resolve_authorized_staging "$1" 26 28)"
 
         # Validar línea por línea que solo contenga comentarios o directivas 'deny <ip_or_cidr>;'
         DENY_REGEX="^deny[[:space:]]+[0-9a-fA-F:\.\/]+;$"
@@ -430,14 +487,26 @@ EOF
 
         mkdir -p /etc/nginx/conf.d
         DEST_BANNED="/etc/nginx/conf.d/proxy_manager_banned_ips.conf"
+        BACKUP_BANNED=""
+        if [ -f "${DEST_BANNED}" ]; then
+            BACKUP_BANNED=$(mktemp /tmp/nginx_banned_bak_XXXXXX.conf)
+            cp -p "${DEST_BANNED}" "${BACKUP_BANNED}"
+        fi
+
         cp -f "${REAL_STAGING}" "${DEST_BANNED}"
         chmod 0644 "${DEST_BANNED}"
 
         if ! nginx -t 2>&1; then
-            rm -f "${DEST_BANNED}"
+            if [ -n "${BACKUP_BANNED}" ] && [ -f "${BACKUP_BANNED}" ]; then
+                mv -f "${BACKUP_BANNED}" "${DEST_BANNED}"
+                chmod 0644 "${DEST_BANNED}"
+            else
+                rm -f "${DEST_BANNED}"
+            fi
             error_exit "Error de sintaxis Nginx al aplicar lista de IPs bloqueadas." 30
         fi
 
+        rm -f "${BACKUP_BANNED}"
         systemctl reload nginx 2>&1 || true
         echo "OK: Lista de IPs bloqueadas sincronizada en Nginx."
         exit 0
@@ -448,30 +517,31 @@ EOF
             error_exit "Uso: $0 sync-geoip <staging_file>" 31
         fi
 
-        STAGING_FILE="$1"
-        if [ ! -f "${STAGING_FILE}" ]; then
-            error_exit "Archivo de staging de GeoIP no encontrado: ${STAGING_FILE}" 32
-        fi
-
-        REAL_STAGING="$(realpath -q "${STAGING_FILE}" 2>/dev/null || echo "")"
-        if [[ -z "${REAL_STAGING}" ]]; then
-            error_exit "No se pudo resolver la ruta del archivo GeoIP." 33
-        fi
-
-        if [[ "${REAL_STAGING}" != "${STAGING_DIR}/"* ]] && [[ "${REAL_STAGING}" != /var/www/*/writable/staging/* ]] && [[ "${REAL_STAGING}" != /tmp/* ]] && [[ "${REAL_STAGING}" != /var/tmp/* ]]; then
-            error_exit "Ruta de staging no autorizada: ${REAL_STAGING}" 34
-        fi
+        REAL_STAGING="$(resolve_authorized_staging "$1" 32 34)"
 
         mkdir -p /etc/nginx/conf.d
         DEST_GEOIP="/etc/nginx/conf.d/proxy_manager_geoip.conf"
+        BACKUP_GEOIP=""
+        if [ -f "${DEST_GEOIP}" ]; then
+            BACKUP_GEOIP=$(mktemp /tmp/nginx_geoip_bak_XXXXXX.conf)
+            cp -p "${DEST_GEOIP}" "${BACKUP_GEOIP}"
+        fi
+
         cp -f "${REAL_STAGING}" "${DEST_GEOIP}"
         chmod 0644 "${DEST_GEOIP}"
 
         if ! nginx -t 2>&1; then
-            rm -f "${DEST_GEOIP}"
+            if [ -n "${BACKUP_GEOIP}" ] && [ -f "${BACKUP_GEOIP}" ]; then
+                mv -f "${BACKUP_GEOIP}" "${DEST_GEOIP}"
+                chmod 0644 "${DEST_GEOIP}"
+            else
+                rm -f "${DEST_GEOIP}"
+                ensure_confd_defaults
+            fi
             error_exit "Error de sintaxis Nginx al aplicar configuración GeoIP." 35
         fi
 
+        rm -f "${BACKUP_GEOIP}"
         systemctl reload nginx 2>&1 || true
         echo "OK: Configuración GeoIP sincronizada en Nginx."
         exit 0
