@@ -62,20 +62,37 @@
                     <span class="badge bg-secondary-subtle text-secondary">Inactivo</span>
                   <?php endif; ?>
                 </td>
-                <td class="text-end">
-                  <div class="d-inline-flex gap-1">
-                    <a href="<?= base_url('streams/toggle/' . (int) $s['id']) ?>" class="btn btn-outline-secondary btn-sm" title="Activar/Desactivar">
-                      <i class="ti ti-power"></i>
+                <td class="text-end pe-3" onclick="event.stopPropagation();">
+                  <div class="dropdown dropstart d-inline-block">
+                    <a href="javascript:void(0)"
+                       class="text-muted p-1 d-inline-block"
+                       data-bs-toggle="dropdown"
+                       data-bs-popper-config='{"strategy":"fixed"}'
+                       aria-expanded="false"
+                       title="Acciones">
+                      <i class="ti ti-dots-vertical fs-5"></i>
                     </a>
-                    <a href="<?= base_url('streams/edit/' . (int) $s['id']) ?>" class="btn btn-outline-primary btn-sm" title="Editar">
-                      <i class="ti ti-pencil"></i>
-                    </a>
-                    <form method="post" action="<?= base_url('streams/delete/' . (int) $s['id']) ?>" onsubmit="return confirm('¿Eliminar este Stream TCP/UDP?');">
-                      <?= csrf_field() ?>
-                      <button type="submit" class="btn btn-outline-danger btn-sm" title="Eliminar">
-                        <i class="ti ti-trash"></i>
-                      </button>
-                    </form>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm border">
+                      <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="<?= base_url('streams/edit/' . (int) $s['id']) ?>">
+                          <i class="ti ti-pencil fs-4"></i> Editar
+                        </a>
+                      </li>
+                      <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="<?= base_url('streams/toggle/' . (int) $s['id']) ?>">
+                          <i class="ti <?= !empty($s['enabled']) ? 'ti-ban' : 'ti-check' ?> fs-4"></i> <?= !empty($s['enabled']) ? 'Desactivar' : 'Activar' ?>
+                        </a>
+                      </li>
+                      <li><hr class="dropdown-divider my-1"></li>
+                      <li>
+                        <form method="post" action="<?= base_url('streams/delete/' . (int) $s['id']) ?>" class="m-0" onsubmit="return confirm('¿Eliminar este Stream TCP/UDP?');">
+                          <?= csrf_field() ?>
+                          <button type="submit" class="dropdown-item text-danger d-flex align-items-center gap-2">
+                            <i class="ti ti-trash fs-4"></i> Eliminar
+                          </button>
+                        </form>
+                      </li>
+                    </ul>
                   </div>
                 </td>
               </tr>

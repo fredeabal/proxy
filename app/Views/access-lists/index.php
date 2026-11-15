@@ -53,17 +53,32 @@
                   <?php endif; ?>
                 </td>
                 <td><?= (int) ($al['host_count'] ?? 0) ?></td>
-                <td class="text-end">
-                  <div class="d-inline-flex gap-1">
-                    <a href="<?= base_url('access-lists/edit/' . (int) $al['id']) ?>" class="btn btn-outline-primary btn-sm" title="Editar">
-                      <i class="ti ti-pencil"></i>
+                <td class="text-end pe-3" onclick="event.stopPropagation();">
+                  <div class="dropdown dropstart d-inline-block">
+                    <a href="javascript:void(0)"
+                       class="text-muted p-1 d-inline-block"
+                       data-bs-toggle="dropdown"
+                       data-bs-popper-config='{"strategy":"fixed"}'
+                       aria-expanded="false"
+                       title="Acciones">
+                      <i class="ti ti-dots-vertical fs-5"></i>
                     </a>
-                    <form method="post" action="<?= base_url('access-lists/delete/' . (int) $al['id']) ?>" onsubmit="return confirm('¿Eliminar esta Access List? Se desvinculará de los hosts asociados.');">
-                      <?= csrf_field() ?>
-                      <button type="submit" class="btn btn-outline-danger btn-sm" title="Eliminar">
-                        <i class="ti ti-trash"></i>
-                      </button>
-                    </form>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm border">
+                      <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="<?= base_url('access-lists/edit/' . (int) $al['id']) ?>">
+                          <i class="ti ti-pencil fs-4"></i> Editar
+                        </a>
+                      </li>
+                      <li><hr class="dropdown-divider my-1"></li>
+                      <li>
+                        <form method="post" action="<?= base_url('access-lists/delete/' . (int) $al['id']) ?>" class="m-0" onsubmit="return confirm('¿Eliminar esta Access List? Se desvinculará de los hosts asociados.');">
+                          <?= csrf_field() ?>
+                          <button type="submit" class="dropdown-item text-danger d-flex align-items-center gap-2">
+                            <i class="ti ti-trash fs-4"></i> Eliminar
+                          </button>
+                        </form>
+                      </li>
+                    </ul>
                   </div>
                 </td>
               </tr>
