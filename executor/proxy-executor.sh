@@ -15,9 +15,6 @@ umask 027
 # Directorios permitidos
 SITES_AVAILABLE="${NGINX_SITES_AVAILABLE:-/etc/nginx/sites-available}"
 SITES_ENABLED="${NGINX_SITES_ENABLED:-/etc/nginx/sites-enabled}"
-STREAMS_AVAILABLE="${NGINX_STREAMS_AVAILABLE:-/etc/nginx/streams-available}"
-STREAMS_ENABLED="${NGINX_STREAMS_ENABLED:-/etc/nginx/streams-enabled}"
-ACCESS_LISTS_DIR="${NGINX_ACCESS_LISTS_DIR:-/etc/nginx/access_lists}"
 if [ -n "${NGINX_STAGING_DIR:-}" ]; then
     STAGING_DIR="${NGINX_STAGING_DIR}"
 elif [ -d "/var/www/proxy-manager/writable/staging" ]; then
@@ -159,25 +156,15 @@ case "${ACTION}" in
         fi
 
         CONFIG_FILE="$1"
-        IS_STREAM=0
-        if [ "${2:-}" = "--stream" ]; then
-            IS_STREAM=1
-        fi
         # Seguridad: Solo permitir rutas absolutas dentro de directorios autorizados
         REAL_PATH="$(realpath -q "${CONFIG_FILE}" 2>/dev/null || echo "")"
         if [ -z "${REAL_PATH}" ] || [ ! -f "${REAL_PATH}" ]; then
             error_exit "Archivo de configuración no encontrado o no válido." 3
         fi
 
-        # Comprobar que esté dentro de sites-available, streams-available o staging autorizado
+        # Comprobar que esté dentro de sites-available o staging autorizado
         case "${REAL_PATH}" in
-            "${STREAMS_AVAILABLE}"/*)
-                IS_STREAM=1
-                ;;
             "${SITES_AVAILABLE}"/*|"${STAGING_DIR}"/*|/var/www/*/writable/staging/*)
-                if [[ "$(basename "${REAL_PATH}")" == stream_* ]]; then
-                    IS_STREAM=1
-                fi
                 ;;
             *)
                 error_exit "Ruta no autorizada para validación: ${REAL_PATH}" 4
@@ -187,53 +174,22 @@ case "${ACTION}" in
         TEST_WRAPPER=$(mktemp /tmp/nginx_val_XXXXXX.conf)
         trap 'rm -f "${TEST_WRAPPER:-}"' EXIT
 
-        MODULES_LINE=""
-        if [ -d /etc/nginx/modules-enabled ] && ls /etc/nginx/modules-enabled/*.conf >/dev/null 2>&1; then
-            MODULES_LINE="include /etc/nginx/modules-enabled/*.conf;"
+        MIME_LINE=""
+        if [ -f /etc/nginx/mime.types ]; then
+            MIME_LINE="include /etc/nginx/mime.types;"
         fi
 
-        if [ "${IS_STREAM}" -eq 1 ]; then
-            if ! grep -rq "ngx_stream_module" /etc/nginx/modules-enabled/ /etc/nginx/nginx.conf 2>/dev/null; then
-                STREAM_MOD_SO=""
-                for cand in /usr/lib/nginx/modules/ngx_stream_module.so /etc/nginx/modules/ngx_stream_module.so /usr/lib64/nginx/modules/ngx_stream_module.so; do
-                    if [ -f "${cand}" ]; then
-                        STREAM_MOD_SO="${cand}"
-                        break
-                    fi
-                done
+        # Incluir configuraciones de conf.d (como GeoIP2 maps o variables compartidas) si existen
+        CONFD_LINE=""
+        GEOIP_FALLBACK=""
+        if [ -d /etc/nginx/conf.d ]; then
+            CONFD_LINE="include /etc/nginx/conf.d/*.conf;"
+        fi
+        if ! grep -rq '\$geoip_blocked' /etc/nginx/conf.d/*.conf 2>/dev/null; then
+            GEOIP_FALLBACK=$'    map $remote_addr $geoip_blocked {\n        default 0;\n    }'
+        fi
 
-                if [ -n "${STREAM_MOD_SO}" ]; then
-                    MODULES_LINE="load_module ${STREAM_MOD_SO};"
-                elif ! nginx -V 2>&1 | grep -qE -- '--with-stream(=yes)?([[:space:]]|$)'; then
-                    error_exit "El módulo Nginx stream (libnginx-mod-stream) no está instalado. Ejecuta en el servidor: sudo apt-get update && sudo apt-get install -y libnginx-mod-stream" 5
-                fi
-            fi
-
-            cat <<EOF > "${TEST_WRAPPER}"
-${MODULES_LINE}
-events { worker_connections 1024; }
-stream {
-    include "${REAL_PATH}";
-}
-EOF
-        else
-            MIME_LINE=""
-            if [ -f /etc/nginx/mime.types ]; then
-                MIME_LINE="include /etc/nginx/mime.types;"
-            fi
-
-            # Incluir configuraciones de conf.d (como GeoIP2 maps o variables compartidas) si existen
-            CONFD_LINE=""
-            GEOIP_FALLBACK=""
-            if [ -d /etc/nginx/conf.d ]; then
-                CONFD_LINE="include /etc/nginx/conf.d/*.conf;"
-            fi
-            if ! grep -rq '\$geoip_blocked' /etc/nginx/conf.d/*.conf 2>/dev/null; then
-                GEOIP_FALLBACK=$'    map $remote_addr $geoip_blocked {\n        default 0;\n    }'
-            fi
-
-            cat <<EOF > "${TEST_WRAPPER}"
-${MODULES_LINE}
+        cat <<EOF > "${TEST_WRAPPER}"
 events { worker_connections 1024; }
 http {
     ${MIME_LINE}
@@ -242,7 +198,6 @@ ${GEOIP_FALLBACK}
     include "${REAL_PATH}";
 }
 EOF
-        fi
         set +e
         VALIDATION_OUTPUT=$(nginx -t -c "${TEST_WRAPPER}" 2>&1)
         EXIT_CODE=$?
@@ -716,120 +671,6 @@ EOF
         chmod 600 "${KEY_FILE}"
 
         echo "OK: Certificado autofirmado generado para ${TARGET}."
-        exit 0
-        ;;
-
-    apply-stream)
-        if [ $# -ne 2 ]; then
-            error_exit "Uso: $0 apply-stream <id> <staging_file>" 50
-        fi
-        STREAM_ID="$1"
-        STAGING_FILE="$2"
-        if ! [[ "${STREAM_ID}" =~ ^[0-9]+$ ]]; then
-            error_exit "ID de stream inválido: ${STREAM_ID}" 51
-        fi
-        REAL_STAGING="$(resolve_authorized_staging "${STAGING_FILE}" 52 53)"
-
-        mkdir -p "${STREAMS_AVAILABLE}" "${STREAMS_ENABLED}"
-        chmod 755 "${STREAMS_AVAILABLE}" "${STREAMS_ENABLED}"
-
-        # Asegurar bloque stream {} en /etc/nginx/nginx.conf si existe
-        if [ -f /etc/nginx/nginx.conf ] && ! grep -q "streams-enabled" /etc/nginx/nginx.conf; then
-            cat << 'EOF' >> /etc/nginx/nginx.conf
-
-stream {
-    include /etc/nginx/streams-enabled/*.conf;
-}
-EOF
-        fi
-
-        DEST_FILE="${STREAMS_AVAILABLE}/${STREAM_ID}.conf"
-        LINK_FILE="${STREAMS_ENABLED}/${STREAM_ID}.conf"
-        BACKUP_FILE=""
-        if [ -f "${DEST_FILE}" ]; then
-            BACKUP_FILE="${DEST_FILE}.bak.$$"
-            cp -a "${DEST_FILE}" "${BACKUP_FILE}"
-        fi
-
-        cp "${REAL_STAGING}" "${DEST_FILE}"
-        chmod 0644 "${DEST_FILE}"
-        ln -sf "${DEST_FILE}" "${LINK_FILE}"
-
-        if ! nginx -t 2>&1; then
-            rm -f "${LINK_FILE}"
-            if [ -n "${BACKUP_FILE}" ] && [ -f "${BACKUP_FILE}" ]; then
-                mv "${BACKUP_FILE}" "${DEST_FILE}"
-                ln -sf "${DEST_FILE}" "${LINK_FILE}"
-            else
-                rm -f "${DEST_FILE}"
-            fi
-            error_exit "Error de sintaxis en stream. Se realizó rollback." 54
-        fi
-
-        [ -n "${BACKUP_FILE}" ] && rm -f "${BACKUP_FILE}"
-        systemctl reload nginx 2>&1
-        echo "OK: Stream ${STREAM_ID} aplicado y Nginx recargado."
-        exit 0
-        ;;
-
-    disable-stream)
-        if [ $# -lt 1 ]; then
-            error_exit "Uso: $0 disable-stream <id>" 50
-        fi
-        STREAM_ID="$1"
-        if ! [[ "${STREAM_ID}" =~ ^[0-9]+$ ]]; then
-            error_exit "ID de stream inválido: ${STREAM_ID}" 51
-        fi
-        rm -f "${STREAMS_ENABLED}/${STREAM_ID}.conf"
-        nginx -t 2>&1 && systemctl reload nginx 2>&1
-        echo "OK: Stream ${STREAM_ID} deshabilitado."
-        exit 0
-        ;;
-
-    remove-stream)
-        if [ $# -ne 1 ]; then
-            error_exit "Uso: $0 remove-stream <id>" 50
-        fi
-        STREAM_ID="$1"
-        if ! [[ "${STREAM_ID}" =~ ^[0-9]+$ ]]; then
-            error_exit "ID de stream inválido: ${STREAM_ID}" 51
-        fi
-        rm -f "${STREAMS_ENABLED}/${STREAM_ID}.conf" "${STREAMS_AVAILABLE}/${STREAM_ID}.conf"
-        nginx -t 2>&1 && systemctl reload nginx 2>&1
-        echo "OK: Stream ${STREAM_ID} eliminado."
-        exit 0
-        ;;
-
-    sync-access-list)
-        if [ $# -ne 2 ]; then
-            error_exit "Uso: $0 sync-access-list <id> <staging_file>" 55
-        fi
-        AL_ID="$1"
-        STAGING_FILE="$2"
-        if ! [[ "${AL_ID}" =~ ^[0-9]+$ ]]; then
-            error_exit "ID de Access List inválido: ${AL_ID}" 56
-        fi
-        REAL_STAGING="$(resolve_authorized_staging "${STAGING_FILE}" 57 58)"
-        mkdir -p "${ACCESS_LISTS_DIR}"
-        chmod 755 "${ACCESS_LISTS_DIR}"
-        DEST_FILE="${ACCESS_LISTS_DIR}/access_list_${AL_ID}.htpasswd"
-        cp "${REAL_STAGING}" "${DEST_FILE}"
-        chown root:www-data "${DEST_FILE}" 2>/dev/null || true
-        chmod 0644 "${DEST_FILE}"
-        echo "OK: Access List ${AL_ID} sincronizada."
-        exit 0
-        ;;
-
-    delete-access-list)
-        if [ $# -ne 1 ]; then
-            error_exit "Uso: $0 delete-access-list <id>" 55
-        fi
-        AL_ID="$1"
-        if ! [[ "${AL_ID}" =~ ^[0-9]+$ ]]; then
-            error_exit "ID de Access List inválido: ${AL_ID}" 56
-        fi
-        rm -f "${ACCESS_LISTS_DIR}/access_list_${AL_ID}.htpasswd"
-        echo "OK: Access List ${AL_ID} eliminada."
         exit 0
         ;;
 

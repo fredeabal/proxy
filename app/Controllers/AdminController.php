@@ -569,6 +569,58 @@ class AdminController extends BaseController
             ->with('success', 'Política de retención actualizada correctamente.');
     }
 
+    public function uploadBackup(): ResponseInterface
+    {
+        $file = $this->request->getFile('backup_file');
+        if (!$file || !$file->isValid() || $file->hasMoved()) {
+            return redirect()->to(base_url('admin?tab=backups'))
+                ->with('error', 'No se recibió un archivo ZIP válido.');
+        }
+
+        $ext = strtolower($file->getClientExtension());
+        if ($ext !== 'zip') {
+            return redirect()->to(base_url('admin?tab=backups'))
+                ->with('error', 'Solo se permiten archivos de copia de seguridad en formato .zip.');
+        }
+
+        if ($file->getSize() > 50 * 1024 * 1024) {
+            return redirect()->to(base_url('admin?tab=backups'))
+                ->with('error', 'El archivo supera el límite máximo permitido de 50 MB.');
+        }
+
+        $rawName  = pathinfo($file->getClientName(), PATHINFO_FILENAME);
+        $safeBase = preg_replace('/[^a-zA-Z0-9._\-]/', '_', $rawName);
+        $safeBase = trim((string) $safeBase, '._-');
+        if ($safeBase === '') {
+            $safeBase = 'backup_imported_' . date('Y-m-d_His');
+        }
+
+        $backupDir = WRITEPATH . 'backups';
+        if (!is_dir($backupDir)) {
+            @mkdir($backupDir, 0750, true);
+        }
+
+        $targetName = $safeBase . '.zip';
+        if (file_exists($backupDir . DIRECTORY_SEPARATOR . $targetName)) {
+            $targetName = $safeBase . '_' . date('His') . '.zip';
+        }
+
+        $file->move($backupDir, $targetName);
+
+        // Validar integridad SHA-256 y esquema SQLite antes de aceptarlo
+        $validation = $this->backupManager->validateBackupArchive($targetName);
+        if (!$validation['valid']) {
+            @unlink($backupDir . DIRECTORY_SEPARATOR . $targetName);
+            return redirect()->to(base_url('admin?tab=backups'))
+                ->with('error', 'Backup rechazado: ' . ($validation['error'] ?? 'Formato o firma SHA-256 inválida.'));
+        }
+
+        AuditLogModel::log('admin_backup_upload', "Importada copia de seguridad externa: {$targetName}");
+
+        return redirect()->to(base_url('admin?tab=backups'))
+            ->with('success', "Copia de seguridad \"{$targetName}\" importada y verificada correctamente. Ya puedes restaurarla desde la lista.");
+    }
+
     public function restoreBackup(): ResponseInterface
     {
         $filename = trim((string) $this->request->getPost('filename'));

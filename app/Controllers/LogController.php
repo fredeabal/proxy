@@ -29,8 +29,6 @@ class LogController extends BaseController
         $type   = strtolower(trim((string) ($this->request->getGet('type') ?: 'access')));
         $domain = trim((string) ($this->request->getGet('domain') ?: ''));
         $file   = trim((string) ($this->request->getGet('file') ?: ''));
-        $hostId = $this->request->getGet('host_id');
-        $hostId = ($hostId !== null && $hostId !== '' && ctype_digit((string) $hostId)) ? (int) $hostId : null;
 
         try {
             // Si se solicita un archivo explícito, validar canónicamente contra Path Traversal
@@ -41,8 +39,7 @@ class LogController extends BaseController
             $result = $this->systemMonitor->readNginxLog(
                 $type,
                 $domain !== '' ? $domain : null,
-                150,
-                $hostId
+                150
             );
 
             return $this->response->setJSON([

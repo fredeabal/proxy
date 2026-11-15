@@ -87,7 +87,7 @@ fi
 echo -e "\n${YELLOW}⏳ [1/7] Actualizando paquetes e instalando dependencias del sistema...${NC}"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y nginx libnginx-mod-http-geoip2 libnginx-mod-stream geoipupdate git unzip curl sqlite3 \
+apt-get install -y nginx libnginx-mod-http-geoip2 geoipupdate git unzip curl sqlite3 \
     certbot python3-certbot-nginx \
     php-fpm php-cli php-sqlite3 php-curl php-intl php-mbstring php-xml php-zip
 

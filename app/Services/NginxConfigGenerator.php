@@ -33,79 +33,42 @@ class NginxConfigGenerator
         $this->assertSafeDomain($primaryDomain);
 
         $serverNames = $this->buildServerNames($proxy);
-        $hostType    = strtolower(trim((string) ($proxy['host_type'] ?? 'proxy')));
-        if (!in_array($hostType, ['proxy', 'redirect'], true)) {
-            throw new InvalidArgumentException("Tipo de host inválido: {$hostType}");
+        $scheme = strtolower(trim((string) ($proxy['scheme'] ?? 'http')));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            throw new InvalidArgumentException("Esquema inválido: {$scheme}");
         }
 
-        $isRedirect = ($hostType === 'redirect');
-        $isLb       = !$isRedirect && !empty($proxy['load_balancing_enabled']);
-
-        if ($isRedirect) {
-            $redirectUrl = trim((string) ($proxy['redirect_url'] ?? ''));
-            $rules = new ProxyHostRules();
-            if (!$rules->valid_redirect_url($redirectUrl, $err)) {
-                throw new InvalidArgumentException($err ?? 'URL de redirección inválida.');
+        $isLb = !empty($proxy['load_balancing_enabled']);
+        if ($isLb) {
+            if (!isset($proxy['upstreams']) && $id > 0) {
+                $upstreamModel = new \App\Models\ProxyUpstreamModel();
+                $proxy['upstreams'] = $upstreamModel->getForProxy($id);
             }
-            $redirectCode = (int) ($proxy['redirect_code'] ?? 301);
-            if (!in_array($redirectCode, [301, 302, 307, 308], true)) {
-                throw new InvalidArgumentException("Código de redirección inválido: {$redirectCode}");
+            if (empty($proxy['upstreams'])) {
+                throw new InvalidArgumentException("El modo de balanceo de carga requiere al menos un servidor backend configurado.");
             }
         } else {
-            $scheme = strtolower(trim((string) ($proxy['scheme'] ?? 'http')));
-            if (!in_array($scheme, ['http', 'https'], true)) {
-                throw new InvalidArgumentException("Esquema inválido: {$scheme}");
+            $forwardHost = trim((string) ($proxy['forward_host'] ?? ''));
+            $this->assertSafeForwardHost($forwardHost);
+
+            $forwardPort = (int) ($proxy['forward_port'] ?? 80);
+            if ($forwardPort < 1 || $forwardPort > 65535) {
+                throw new InvalidArgumentException("Puerto de destino fuera de rango: {$forwardPort}");
             }
-
-            if ($isLb) {
-                if (!isset($proxy['upstreams']) && $id > 0) {
-                    $upstreamModel = new \App\Models\ProxyUpstreamModel();
-                    $proxy['upstreams'] = $upstreamModel->getForProxy($id);
-                }
-                if (empty($proxy['upstreams'])) {
-                    throw new InvalidArgumentException("El modo de balanceo de carga requiere al menos un servidor backend configurado.");
-                }
-            } else {
-                $forwardHost = trim((string) ($proxy['forward_host'] ?? ''));
-                $this->assertSafeForwardHost($forwardHost);
-
-                $forwardPort = (int) ($proxy['forward_port'] ?? 80);
-                if ($forwardPort < 1 || $forwardPort > 65535) {
-                    throw new InvalidArgumentException("Puerto de destino fuera de rango: {$forwardPort}");
-                }
-            }
-
-            if (!isset($proxy['locations']) && $id > 0) {
-                $locationModel = new \App\Models\ProxyLocationModel();
-                $proxy['locations'] = $locationModel->getForProxy($id);
-            }
-        }
-
-        // Cargar Access List asociada si existe
-        if (!empty($proxy['access_list_id']) && !isset($proxy['access_list'])) {
-            $alModel = new \App\Models\AccessListModel();
-            $proxy['access_list'] = $alModel->getWithRelations((int) $proxy['access_list_id']);
         }
 
         $sslEnabled = !empty($proxy['ssl_enabled']);
         $forceHttps = !empty($proxy['force_https']) && $sslEnabled;
         $acmeWebroot = rtrim($this->config->acmeWebroot, '/');
-        $logsPath = rtrim($this->config->logsPath, '/');
-        $accessLogLine = $id > 0 ? "    access_log {$logsPath}/proxy_host_{$id}_access.log;" : "    access_log {$logsPath}/access.log;";
-        $errorLogLine  = $id > 0 ? "    error_log  {$logsPath}/proxy_host_{$id}_error.log;" : "    error_log  {$logsPath}/error.log;";
 
         $lines = [];
         $lines[] = '# ==============================================================================';
-        $lines[] = "# Reverse Proxy Manager - " . ($isRedirect ? 'Redirection Host' : 'Proxy Host') . " [ID: {$id}]";
+        $lines[] = "# Reverse Proxy Manager - Proxy Host [ID: {$id}]";
         $lines[] = "# Dominio: {$primaryDomain}";
         $lines[] = '# Generado automáticamente - NO EDITAR MANUALMENTE';
         $lines[] = '# Fecha: ' . date('Y-m-d H:i:s');
         $lines[] = '# ==============================================================================';
         $lines[] = '';
-
-        if (!empty($proxy['rate_limit_enabled'])) {
-            $lines[] = $this->renderRateLimitZone($proxy);
-        }
 
         if ($isLb) {
             $lines[] = $this->renderUpstreamBlock($proxy);
@@ -120,9 +83,6 @@ class NginxConfigGenerator
             $lines[] = '    listen [::]:80;';
             $lines[] = "    server_name {$serverNames};";
             $lines[] = '';
-            $lines[] = $accessLogLine;
-            $lines[] = $errorLogLine;
-            $lines[] = '';
             $lines[] = '    # Reto ACME para renovación de Let\'s Encrypt';
             $lines[] = '    location ^~ /.well-known/acme-challenge/ {';
             $lines[] = '        default_type "text/plain";';
@@ -136,14 +96,7 @@ class NginxConfigGenerator
                 $lines[] = '    location / {';
                 $lines[] = '        return 301 https://$host$request_uri;';
                 $lines[] = '    }';
-            } elseif ($isRedirect) {
-                $lines[] = $this->renderRedirectBlock($proxy, 4);
             } else {
-                $customLocs = $this->renderCustomLocations($proxy, 4);
-                if ($customLocs !== '') {
-                    $lines[] = $customLocs;
-                    $lines[] = '';
-                }
                 $lines[] = $this->renderProxyPassBlock($proxy, 4);
             }
 
@@ -159,9 +112,6 @@ class NginxConfigGenerator
             $lines[] = '    listen 443 ssl;';
             $lines[] = '    listen [::]:443 ssl;';
             $lines[] = "    server_name {$serverNames};";
-            $lines[] = '';
-            $lines[] = $accessLogLine;
-            $lines[] = $errorLogLine;
             $lines[] = '';
             $lines[] = "    ssl_certificate {$certPaths['cert']};";
             $lines[] = "    ssl_certificate_key {$certPaths['key']};";
@@ -180,16 +130,7 @@ class NginxConfigGenerator
             $lines[] = '';
             $lines[] = $this->renderErrorPages(4);
             $lines[] = '';
-            if ($isRedirect) {
-                $lines[] = $this->renderRedirectBlock($proxy, 4);
-            } else {
-                $customLocs = $this->renderCustomLocations($proxy, 4);
-                if ($customLocs !== '') {
-                    $lines[] = $customLocs;
-                    $lines[] = '';
-                }
-                $lines[] = $this->renderProxyPassBlock($proxy, 4);
-            }
+            $lines[] = $this->renderProxyPassBlock($proxy, 4);
             $lines[] = '}';
         } else {
             // -------------------------------------------------------------
@@ -200,9 +141,6 @@ class NginxConfigGenerator
             $lines[] = '    listen [::]:80;';
             $lines[] = "    server_name {$serverNames};";
             $lines[] = '';
-            $lines[] = $accessLogLine;
-            $lines[] = $errorLogLine;
-            $lines[] = '';
             $lines[] = '    # Reto ACME para emisión inicial de certificados';
             $lines[] = '    location ^~ /.well-known/acme-challenge/ {';
             $lines[] = '        default_type "text/plain";';
@@ -212,16 +150,7 @@ class NginxConfigGenerator
             $lines[] = '';
             $lines[] = $this->renderErrorPages(4);
             $lines[] = '';
-            if ($isRedirect) {
-                $lines[] = $this->renderRedirectBlock($proxy, 4);
-            } else {
-                $customLocs = $this->renderCustomLocations($proxy, 4);
-                if ($customLocs !== '') {
-                    $lines[] = $customLocs;
-                    $lines[] = '';
-                }
-                $lines[] = $this->renderProxyPassBlock($proxy, 4);
-            }
+            $lines[] = $this->renderProxyPassBlock($proxy, 4);
             $lines[] = '}';
         }
 
@@ -378,19 +307,6 @@ class NginxConfigGenerator
         $lines[] = "{$padInner}if (\$geoip_blocked = 1) {";
         $lines[] = "{$padInner}    return 403;";
         $lines[] = "{$padInner}}";
-
-        $accessListDirectives = $this->renderAccessListDirectives($proxy, $indent + 4);
-        if ($accessListDirectives !== '') {
-            $lines[] = '';
-            $lines[] = $accessListDirectives;
-        }
-
-        $rateLimitDirectives = $this->renderRateLimitDirectives($proxy, $indent + 4);
-        if ($rateLimitDirectives !== '') {
-            $lines[] = '';
-            $lines[] = $rateLimitDirectives;
-        }
-
         $lines[] = '';
         $lines[] = "{$padInner}client_max_body_size {$maxBodyDirective};";
         $lines[] = "{$padInner}proxy_pass {$proxyPassUrl};";
@@ -456,304 +372,6 @@ class NginxConfigGenerator
         }
 
         $lines[] = "{$pad}}";
-
-        return implode("\n", $lines);
-    }
-
-    /**
-     * Renderiza la directiva `limit_req_zone` a nivel http para Rate Limiting por IP.
-     */
-    protected function renderRateLimitZone(array $proxy): string
-    {
-        $id       = (int) ($proxy['id'] ?? 0);
-        $requests = max(1, min(10000, (int) ($proxy['rate_limit_requests'] ?? 10)));
-        $unit     = strtolower(trim((string) ($proxy['rate_limit_unit'] ?? 's')));
-        if (!in_array($unit, ['s', 'm'], true)) {
-            $unit = 's';
-        }
-
-        $zoneName = $id > 0 ? "rate_limit_proxy_{$id}" : 'rate_limit_proxy_' . preg_replace('/[^a-z0-9]/', '_', strtolower((string) ($proxy['domain'] ?? 'host')));
-
-        return "limit_req_zone \$binary_remote_addr zone={$zoneName}:10m rate={$requests}r/{$unit};\n";
-    }
-
-    /**
-     * Renderiza las directivas `limit_req` y `limit_req_status` dentro de un bloque location.
-     */
-    protected function renderRateLimitDirectives(array $proxy, int $indent = 8): string
-    {
-        if (empty($proxy['rate_limit_enabled'])) {
-            return '';
-        }
-
-        $pad      = str_repeat(' ', $indent);
-        $id       = (int) ($proxy['id'] ?? 0);
-        $zoneName = $id > 0 ? "rate_limit_proxy_{$id}" : 'rate_limit_proxy_' . preg_replace('/[^a-z0-9]/', '_', strtolower((string) ($proxy['domain'] ?? 'host')));
-        $burst    = max(0, min(10000, (int) ($proxy['rate_limit_burst'] ?? 20)));
-        $nodelay  = !isset($proxy['rate_limit_nodelay']) || !empty($proxy['rate_limit_nodelay']);
-
-        $limitLine = "{$pad}limit_req zone={$zoneName}";
-        if ($burst > 0) {
-            $limitLine .= " burst={$burst}";
-            if ($nodelay) {
-                $limitLine .= ' nodelay';
-            }
-        }
-        $limitLine .= ';';
-
-        return implode("\n", [
-            "{$pad}# Rate Limiting por IP",
-            $limitLine,
-            "{$pad}limit_req_status 429;",
-        ]);
-    }
-
-    /**
-     * Renderiza las directivas de Access List (IP/CIDR allow/deny y auth_basic).
-     */
-    protected function renderAccessListDirectives(array $proxy, int $indent = 8): string
-    {
-        $accessList = $proxy['access_list'] ?? null;
-        if (empty($accessList) || !is_array($accessList)) {
-            return '';
-        }
-
-        $clients = $accessList['clients'] ?? [];
-        $users   = $accessList['users'] ?? [];
-
-        if (empty($clients) && empty($users)) {
-            return '';
-        }
-
-        $pad   = str_repeat(' ', $indent);
-        $lines = [];
-        $lines[] = "{$pad}# Access List: " . preg_replace('/[\r\n]/', '', (string) ($accessList['name'] ?? 'Custom'));
-
-        if (!empty($clients) && !empty($users)) {
-            $satisfy = !empty($accessList['satisfy_any']) ? 'any' : 'all';
-            $lines[] = "{$pad}satisfy {$satisfy};";
-        }
-
-        if (!empty($clients)) {
-            $hasExplicitAll = false;
-            $hasAllow       = false;
-            foreach ($clients as $client) {
-                $dir  = strtolower(trim((string) ($client['directive'] ?? 'allow')));
-                $addr = trim((string) ($client['address'] ?? ''));
-                if (!in_array($dir, ['allow', 'deny'], true) || !ProxyHostRules::validCidrOrIp($addr)) {
-                    continue;
-                }
-                if ($addr === 'all') {
-                    $hasExplicitAll = true;
-                }
-                if ($dir === 'allow') {
-                    $hasAllow = true;
-                }
-                $lines[] = "{$pad}{$dir} {$addr};";
-            }
-            if ($hasAllow && !$hasExplicitAll) {
-                $lines[] = "{$pad}deny all;";
-            }
-        }
-
-        if (!empty($users)) {
-            $alId = (int) ($accessList['id'] ?? $proxy['access_list_id'] ?? 0);
-            $htpasswdPath = rtrim($this->config->accessListsPath, '/') . "/access_list_{$alId}.htpasswd";
-            $this->assertSafePath($htpasswdPath);
-            $realm = preg_replace('/[^a-zA-Z0-9 ._\-]/', '', (string) ($accessList['name'] ?? 'Restricted Area'));
-            $realm = $realm !== '' ? $realm : 'Restricted Area';
-
-            $lines[] = "{$pad}auth_basic \"{$realm}\";";
-            $lines[] = "{$pad}auth_basic_user_file {$htpasswdPath};";
-        }
-
-        return implode("\n", $lines);
-    }
-
-    /**
-     * Renderiza el bloque `location /` para Redirection Hosts (301/302/307/308).
-     */
-    protected function renderRedirectBlock(array $proxy, int $indent = 4): string
-    {
-        $pad      = str_repeat(' ', $indent);
-        $padInner = str_repeat(' ', $indent + 4);
-
-        $redirectUrl  = trim((string) ($proxy['redirect_url'] ?? ''));
-        $redirectCode = (int) ($proxy['redirect_code'] ?? 301);
-        $preservePath = !isset($proxy['preserve_path']) || !empty($proxy['preserve_path']);
-
-        if ($preservePath && !str_contains($redirectUrl, '$request_uri')) {
-            $target = rtrim($redirectUrl, '/') . '$request_uri';
-        } else {
-            $target = $redirectUrl;
-        }
-
-        $lines   = [];
-        $lines[] = "{$pad}location / {";
-        $lines[] = "{$padInner}# Control GeoIP2 (si está habilitado globalmente)";
-        $lines[] = "{$padInner}if (\$geoip_blocked = 1) {";
-        $lines[] = "{$padInner}    return 403;";
-        $lines[] = "{$padInner}}";
-
-        $accessListDirectives = $this->renderAccessListDirectives($proxy, $indent + 4);
-        if ($accessListDirectives !== '') {
-            $lines[] = '';
-            $lines[] = $accessListDirectives;
-        }
-
-        $rateLimitDirectives = $this->renderRateLimitDirectives($proxy, $indent + 4);
-        if ($rateLimitDirectives !== '') {
-            $lines[] = '';
-            $lines[] = $rateLimitDirectives;
-        }
-
-        $lines[] = '';
-        $lines[] = "{$padInner}# Redirección HTTP {$redirectCode}";
-        $lines[] = "{$padInner}return {$redirectCode} {$target};";
-        $lines[] = "{$pad}}";
-
-        return implode("\n", $lines);
-    }
-
-    /**
-     * Renderiza bloques `location` personalizados adicionales para rutas específicas.
-     */
-    protected function renderCustomLocations(array $proxy, int $indent = 4): string
-    {
-        $locations = $proxy['locations'] ?? [];
-        if (empty($locations) || !is_array($locations)) {
-            return '';
-        }
-
-        $pad      = str_repeat(' ', $indent);
-        $padInner = str_repeat(' ', $indent + 4);
-        $blocks   = [];
-
-        foreach ($locations as $loc) {
-            $path = trim((string) ($loc['path'] ?? ''));
-            if (!ProxyHostRules::validLocationPath($path, $pathErr)) {
-                throw new InvalidArgumentException($pathErr ?? "Ruta location inválida: {$path}");
-            }
-
-            $locScheme = strtolower(trim((string) ($loc['scheme'] ?? 'http')));
-            if (!in_array($locScheme, ['http', 'https'], true)) {
-                throw new InvalidArgumentException("Esquema inválido en location {$path}: {$locScheme}");
-            }
-
-            $locHost = trim((string) ($loc['forward_host'] ?? ''));
-            $this->assertSafeForwardHost($locHost);
-
-            $locPort = (int) ($loc['forward_port'] ?? 80);
-            if ($locPort < 1 || $locPort > 65535) {
-                throw new InvalidArgumentException("Puerto fuera de rango en location {$path}: {$locPort}");
-            }
-
-            $locProxyPass = "{$locScheme}://" . $this->formatHostForUrl($locHost) . ":{$locPort}";
-            $locWs        = !empty($loc['websocket_enabled']);
-
-            $lines   = [];
-            $lines[] = "{$pad}location {$path} {";
-            $lines[] = "{$padInner}if (\$geoip_blocked = 1) {";
-            $lines[] = "{$padInner}    return 403;";
-            $lines[] = "{$padInner}}";
-
-            $accessListDirectives = $this->renderAccessListDirectives($proxy, $indent + 4);
-            if ($accessListDirectives !== '') {
-                $lines[] = '';
-                $lines[] = $accessListDirectives;
-            }
-
-            $rateLimitDirectives = $this->renderRateLimitDirectives($proxy, $indent + 4);
-            if ($rateLimitDirectives !== '') {
-                $lines[] = '';
-                $lines[] = $rateLimitDirectives;
-            }
-
-            $lines[] = '';
-            $lines[] = "{$padInner}proxy_pass {$locProxyPass};";
-            $lines[] = "{$padInner}proxy_set_header Host \$host;";
-            $lines[] = "{$padInner}proxy_set_header X-Real-IP \$remote_addr;";
-            $lines[] = "{$padInner}proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;";
-            $lines[] = "{$padInner}proxy_set_header X-Forwarded-Proto \$scheme;";
-            $lines[] = "{$padInner}proxy_set_header X-Forwarded-Host \$host;";
-            $lines[] = "{$padInner}proxy_set_header X-Forwarded-Port \$server_port;";
-
-            if ($locWs) {
-                $lines[] = "{$padInner}proxy_http_version 1.1;";
-                $lines[] = "{$padInner}proxy_set_header Upgrade \$http_upgrade;";
-                $lines[] = "{$padInner}proxy_set_header Connection \"upgrade\";";
-            }
-
-            if (!empty($loc['custom_headers'])) {
-                $locCustomHeaders = $this->renderCustomHeaders(['custom_headers' => $loc['custom_headers']], $indent + 4);
-                if ($locCustomHeaders !== '') {
-                    $lines[] = $locCustomHeaders;
-                }
-            }
-
-            $lines[] = "{$pad}}";
-            $blocks[] = implode("\n", $lines);
-        }
-
-        return implode("\n\n", $blocks);
-    }
-
-    /**
-     * Genera la configuración Nginx para un bloque `stream` (Proxy TCP/UDP).
-     *
-     * @throws InvalidArgumentException
-     */
-    public function generateStream(array $stream): string
-    {
-        $id           = (int) ($stream['id'] ?? 0);
-        $incomingPort = (int) ($stream['incoming_port'] ?? 0);
-        if ($incomingPort < 1 || $incomingPort > 65535) {
-            throw new InvalidArgumentException("Puerto de entrada inválido en stream: {$incomingPort}");
-        }
-
-        $forwardHost = trim((string) ($stream['forward_host'] ?? ''));
-        $this->assertSafeForwardHost($forwardHost);
-
-        $forwardPort = (int) ($stream['forward_port'] ?? 0);
-        if ($forwardPort < 1 || $forwardPort > 65535) {
-            throw new InvalidArgumentException("Puerto de destino inválido en stream: {$forwardPort}");
-        }
-
-        $protocol = strtolower(trim((string) ($stream['protocol'] ?? 'tcp')));
-        if (!in_array($protocol, ['tcp', 'udp', 'tcp_udp'], true)) {
-            throw new InvalidArgumentException("Protocolo de stream inválido: {$protocol}");
-        }
-
-        $target = $this->formatHostForUrl($forwardHost) . ":{$forwardPort}";
-
-        $lines   = [];
-        $lines[] = '# ==============================================================================';
-        $lines[] = "# Reverse Proxy Manager - Stream TCP/UDP [ID: {$id}]";
-        $lines[] = "# Puerto Entrada: {$incomingPort} ({$protocol}) -> {$target}";
-        $lines[] = '# Generado automáticamente - NO EDITAR MANUALMENTE';
-        $lines[] = '# Fecha: ' . date('Y-m-d H:i:s');
-        $lines[] = '# ==============================================================================';
-        $lines[] = '';
-        $lines[] = 'server {';
-
-        if ($protocol === 'tcp' || $protocol === 'tcp_udp') {
-            $lines[] = "    listen {$incomingPort};";
-            $lines[] = "    listen [::]:{$incomingPort};";
-        }
-        if ($protocol === 'udp' || $protocol === 'tcp_udp') {
-            $lines[] = "    listen {$incomingPort} udp;";
-            $lines[] = "    listen [::]:{$incomingPort} udp;";
-        }
-
-        $lines[] = "    proxy_pass {$target};";
-        $lines[] = '    proxy_connect_timeout 10s;';
-        if ($protocol === 'udp') {
-            $lines[] = '    proxy_responses 1;';
-        } else {
-            $lines[] = '    proxy_timeout 600s;';
-        }
-        $lines[] = '}';
-        $lines[] = '';
 
         return implode("\n", $lines);
     }
@@ -946,6 +564,7 @@ class NginxConfigGenerator
             throw new InvalidArgumentException("Host de destino no válido: {$host}");
         }
     }
+
 
     /**
      * Genera la configuración Nginx para el vhost del panel de administración (proxy-manager).

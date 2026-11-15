@@ -44,8 +44,7 @@ class NginxValidator
             return ['valid' => false, 'error' => 'Falta el bloque server principal.'];
         }
 
-        $hasProxyOrRedirect = str_contains($configContent, 'proxy_pass')
-            || (bool) preg_match('/\breturn\s+(301|302|307|308)\b/', $configContent);
+        $hasProxyOrRedirect = str_contains($configContent, 'proxy_pass') || str_contains($configContent, 'return 301');
         $hasFastcgi         = $allowFastcgi && str_contains($configContent, 'fastcgi_pass');
 
         if (!$hasProxyOrRedirect && !$hasFastcgi) {
@@ -81,7 +80,7 @@ class NginxValidator
      * @param bool $allowFastcgi Permitir bloques PHP-FPM (fastcgi_pass) como el del panel
      * @return array{valid: bool, error: ?string, output: string}
      */
-    public function validateFile(string $filePath, bool $allowFastcgi = false, bool $isStream = false): array
+    public function validateFile(string $filePath, bool $allowFastcgi = false): array
     {
         if (!file_exists($filePath)) {
             return [
@@ -106,9 +105,7 @@ class NginxValidator
 
         // Si el ejecutor existe en el sistema
         if (is_file($executor)) {
-            $cmd = $isStream
-                ? ['sudo', $executor, 'validate-config', $filePath, '--stream']
-                : ['sudo', $executor, 'validate-config', $filePath];
+            $cmd = ['sudo', $executor, 'validate-config', $filePath];
             $descriptors = [
                 0 => ['pipe', 'r'],
                 1 => ['pipe', 'w'],
@@ -142,13 +139,9 @@ class NginxValidator
         if ($nginxBin !== null) {
             // Un archivo vhost (server {}) debe envolverse en un bloque http {} para que nginx -t -c pueda validarlo
             $testWrapper = tempnam(sys_get_temp_dir(), 'nginx_val_');
-            if ($isStream) {
-                $wrapperContent = "events { worker_connections 1024; }\nstream {\n    include \"{$filePath}\";\n}\n";
-            } else {
-                $mimeInclude = file_exists('/etc/nginx/mime.types') ? 'include /etc/nginx/mime.types;' : '';
-                $confdInclude = is_dir('/etc/nginx/conf.d') ? 'include /etc/nginx/conf.d/*.conf;' : '';
-                $wrapperContent = "events { worker_connections 1024; }\nhttp {\n    {$mimeInclude}\n    map \$remote_addr \$geoip_blocked {\n        default 0;\n    }\n    {$confdInclude}\n    include \"{$filePath}\";\n}\n";
-            }
+            $mimeInclude = file_exists('/etc/nginx/mime.types') ? 'include /etc/nginx/mime.types;' : '';
+            $confdInclude = is_dir('/etc/nginx/conf.d') ? 'include /etc/nginx/conf.d/*.conf;' : '';
+            $wrapperContent = "events { worker_connections 1024; }\nhttp {\n    {$mimeInclude}\n    map \$remote_addr \$geoip_blocked {\n        default 0;\n    }\n    {$confdInclude}\n    include \"{$filePath}\";\n}\n";
             file_put_contents($testWrapper, $wrapperContent);
 
             $cmd = [$nginxBin, '-t', '-c', $testWrapper];

@@ -55,10 +55,10 @@
 
 <!-- Listado de Copias de Seguridad (SIN columna contenido) -->
 <div class="card border shadow-none mb-4" id="backupsManagerCard">
-  <!-- Buscador en tiempo real integrado -->
+  <!-- Buscador en tiempo real e Importar Backup -->
   <div class="card-body p-3 border-bottom">
     <div class="row g-2 align-items-center">
-      <div class="col-12">
+      <div class="col-12 col-md-6">
         <div class="input-group">
           <span class="input-group-text bg-transparent"><i class="ti ti-search"></i></span>
           <input type="search"
@@ -66,6 +66,15 @@
                  class="form-control"
                  placeholder="Buscar por nombre de archivo o fecha...">
         </div>
+      </div>
+      <div class="col-12 col-md-6">
+        <form method="post" action="<?= base_url('admin/backups/upload') ?>" enctype="multipart/form-data" class="d-flex align-items-center gap-2">
+          <?= csrf_field() ?>
+          <input type="file" name="backup_file" accept=".zip,application/zip" class="form-control form-control-sm" required>
+          <button type="submit" class="btn btn-primary btn-sm text-nowrap d-inline-flex align-items-center gap-1">
+            <i class="ti ti-upload"></i> Importar
+          </button>
+        </form>
       </div>
     </div>
   </div>

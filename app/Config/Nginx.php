@@ -17,21 +17,6 @@ class Nginx extends BaseConfig
     public string $sitesEnabled = '/etc/nginx/sites-enabled';
 
     /**
-     * Directorio de configuraciones de streams TCP/UDP disponibles.
-     */
-    public string $streamsAvailable = '/etc/nginx/streams-available';
-
-    /**
-     * Directorio de configuraciones de streams TCP/UDP activadas (symlinks).
-     */
-    public string $streamsEnabled = '/etc/nginx/streams-enabled';
-
-    /**
-     * Directorio de archivos .htpasswd para Access Lists.
-     */
-    public string $accessListsPath = '/etc/nginx/access_lists';
-
-    /**
      * Directorio de logs de Nginx.
      */
     public string $logsPath = '/var/log/nginx';
