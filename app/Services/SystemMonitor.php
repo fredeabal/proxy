@@ -226,7 +226,7 @@ class SystemMonitor
      * @return array{file: string, lines: list<string>, simulated: bool}
      * @throws InvalidArgumentException Si el tipo o dominio contiene caracteres maliciosos
      */
-    public function readNginxLog(string $type = 'access', ?string $domain = null, int $maxLines = 100): array
+    public function readNginxLog(string $type = 'access', ?string $domain = null, int $maxLines = 100, ?int $hostId = null): array
     {
         $type = strtolower(trim($type));
         if (!in_array($type, ['access', 'error'], true)) {
@@ -243,6 +243,34 @@ class SystemMonitor
         }
 
         $maxLines = max(1, min(500, $maxLines));
+
+        // Resolver ID de host si se filtró por dominio para priorizar log dedicado
+        if ($hostId === null && $domain !== null) {
+            try {
+                $proxyModel = new \App\Models\ProxyHostModel();
+                $matched = $proxyModel->where('domain', $domain)->first();
+                if ($matched) {
+                    $hostId = (int) $matched['id'];
+                }
+            } catch (\Throwable $e) {
+                // Ignorar si no hay BD disponible en contexto unitario aislado
+            }
+        }
+
+        if ($hostId !== null && $hostId > 0) {
+            $dedicatedFilename = "proxy_host_{$hostId}_{$type}.log";
+            $dedicatedPath = $this->resolveSafeLogPath($dedicatedFilename);
+            if (is_file($dedicatedPath) && is_readable($dedicatedPath)) {
+                $content = (string) file_get_contents($dedicatedPath);
+                $rawLines = preg_split('/\r\n|\r|\n/', trim($content), -1, PREG_SPLIT_NO_EMPTY);
+                return [
+                    'file'      => $dedicatedFilename,
+                    'lines'     => array_slice($rawLines, -$maxLines),
+                    'simulated' => false,
+                ];
+            }
+        }
+
         $filename = $type === 'error' ? 'error.log' : 'access.log';
         $safePath = $this->resolveSafeLogPath($filename);
 

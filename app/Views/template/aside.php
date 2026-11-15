@@ -56,6 +56,24 @@
               </a>
             </li>
 
+            <li class="sidebar-item">
+              <a class="sidebar-link <?= $currentSection === 'access-lists' ? 'active' : '' ?>" href="<?= base_url('access-lists') ?>" aria-expanded="false">
+                <span>
+                  <i class="ti ti-shield-check"></i>
+                </span>
+                <span class="hide-menu">Access Lists</span>
+              </a>
+            </li>
+
+            <li class="sidebar-item">
+              <a class="sidebar-link <?= $currentSection === 'streams' ? 'active' : '' ?>" href="<?= base_url('streams') ?>" aria-expanded="false">
+                <span>
+                  <i class="ti ti-arrows-transfer-up"></i>
+                </span>
+                <span class="hide-menu">Streams TCP/UDP</span>
+              </a>
+            </li>
+
             <?php if ($isAdminUser): ?>
               <li class="nav-small-cap mt-4">
                 <i class="ti ti-dots nav-small-cap-icon fs-4"></i>

@@ -323,5 +323,101 @@ class ProxyHostRules
             'headers'    => $parsedHeaders,
         ];
     }
+
+    /**
+     * Valida una URL de redirección (http:// o https://) previniendo inyección de directivas Nginx.
+     */
+    public function valid_redirect_url(?string $url, ?string &$error = null): bool
+    {
+        $url = trim((string) $url);
+        if ($url === '') {
+            $error = 'La URL de destino de redirección es obligatoria.';
+            return false;
+        }
+
+        if (preg_match('/[\s;{}"\'\\\\#\r\n`\$]/', $url)) {
+            $error = 'La URL de redirección contiene caracteres no válidos o peligrosos.';
+            return false;
+        }
+
+        if (!preg_match('#^https?://#i', $url) || filter_var($url, FILTER_VALIDATE_URL) === false) {
+            $error = 'La URL de redirección debe ser una dirección HTTP o HTTPS válida (ej. https://destino.com).';
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Valida una ruta de bloque location personalizada de Nginx (ej. /api, ^~ /static, = /health).
+     */
+    public static function validLocationPath(string $path, ?string &$error = null): bool
+    {
+        $path = trim($path);
+        if ($path === '' || $path === '/') {
+            $error = 'La ruta personalizada no puede estar vacía ni ser "/" (el prefijo raíz ya está gestionado).';
+            return false;
+        }
+
+        if (preg_match('/[;{}"\'\\\\#\r\n`\$]/', $path) || str_contains($path, '..')) {
+            $error = "La ruta \"{$path}\" contiene caracteres o secuencias no permitidas.";
+            return false;
+        }
+
+        // Permitir prefijos estándar de Nginx: /ruta, = /ruta, ^~ /ruta, ~ /regex, ~* /regex
+        if (!preg_match('#^(?:(?:=|\^~|~\*?)\s+)?/[^\s]*$#', $path)) {
+            $error = "La ruta \"{$path}\" debe comenzar por \"/\" o un modificador válido (=, ^~, ~, ~*) seguido de \"/\".";
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Valida una dirección IP, rango CIDR (IPv4/IPv6) o la palabra clave 'all'.
+     */
+    public static function validCidrOrIp(string $address, ?string &$error = null): bool
+    {
+        $address = trim($address);
+        if ($address === 'all') {
+            return true;
+        }
+
+        if (str_contains($address, '/')) {
+            $parts = explode('/', $address, 2);
+            if (count($parts) !== 2 || !ctype_digit($parts[1])) {
+                $error = "Rango CIDR inválido: {$address}";
+                return false;
+            }
+            $ip   = $parts[0];
+            $mask = (int) $parts[1];
+
+            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+                if ($mask < 0 || $mask > 32) {
+                    $error = "Máscara IPv4 fuera de rango (0-32): {$address}";
+                    return false;
+                }
+                return true;
+            }
+
+            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+                if ($mask < 0 || $mask > 128) {
+                    $error = "Máscara IPv6 fuera de rango (0-128): {$address}";
+                    return false;
+                }
+                return true;
+            }
+
+            $error = "Dirección IP en CIDR inválida: {$address}";
+            return false;
+        }
+
+        if (filter_var($address, FILTER_VALIDATE_IP) === false) {
+            $error = "Dirección IP inválida: {$address}";
+            return false;
+        }
+
+        return true;
+    }
 }
 

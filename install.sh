@@ -55,6 +55,34 @@ DOMAIN=$(echo "$RAW_DOMAIN" | sed -e 's|^[^/]*//||' -e 's|/.*$||' | tr -d '[:spa
 read -p "👉 Ingresa el Puerto de acceso al panel web [Predeterminado: 81]: " INPUT_PORT
 PORT=${INPUT_PORT:-81}
 
+read -p "👉 ¿Deseas activar HTTPS (SSL/TLS) para el panel de administración? (s/N) [Predeterminado: N]: " INPUT_SSL
+PANEL_SSL_ENABLED=0
+PANEL_SSL_MODE="self_signed"
+PANEL_SSL_EMAIL=""
+PANEL_SCHEME="http"
+
+if [[ "$INPUT_SSL" =~ ^[sSyY]$ ]]; then
+    PANEL_SSL_ENABLED=1
+    PANEL_SCHEME="https"
+
+    # Detectar si es IP o localhost (Let's Encrypt requiere dominio válido)
+    if [[ "$DOMAIN" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || [[ "$DOMAIN" == *":"* ]] || [ "$DOMAIN" = "localhost" ]; then
+        echo -e "${YELLOW}ℹ️  Se detectó una IP o localhost (${DOMAIN}). Se generará un certificado SSL autofirmado.${NC}"
+        PANEL_SSL_MODE="self_signed"
+    else
+        echo -e "   1) Let's Encrypt (Certificado automático - requiere DNS apuntando al servidor y puerto 80 accesible)"
+        echo -e "   2) Autofirmado (Self-Signed - ideal para redes locales o sin DNS público)"
+        read -p "👉 Selecciona el tipo de certificado [1/2, Predeterminado: 1]: " INPUT_SSL_MODE
+        if [ "${INPUT_SSL_MODE:-1}" = "2" ]; then
+            PANEL_SSL_MODE="self_signed"
+        else
+            PANEL_SSL_MODE="letsencrypt"
+            read -p "👉 Correo para avisos de Let's Encrypt (Opcional): " INPUT_SSL_EMAIL
+            PANEL_SSL_EMAIL=$(echo "${INPUT_SSL_EMAIL:-}" | tr -d '[:space:]')
+        fi
+    fi
+fi
+
 # 3. Instalación de paquetes del sistema
 echo -e "\n${YELLOW}⏳ [1/7] Actualizando paquetes e instalando dependencias del sistema...${NC}"
 export DEBIAN_FRONTEND=noninteractive
@@ -124,10 +152,18 @@ DB_PATH="${DB_DIR}/database.sqlite"
 
 # Ajustar variables en .env (iniciar en development para migraciones/seeders)
 SAFE_DOMAIN=$(printf '%s\n' "$DOMAIN" | sed 's/[&|\\]/\\&/g')
+if { [ "$PANEL_SCHEME" = "https" ] && [ "$PORT" = "443" ]; } || { [ "$PANEL_SCHEME" = "http" ] && [ "$PORT" = "80" ]; }; then
+    PANEL_BASE_URL="${PANEL_SCHEME}://${SAFE_DOMAIN}/"
+    DISPLAY_URL="${PANEL_SCHEME}://${DOMAIN}"
+else
+    PANEL_BASE_URL="${PANEL_SCHEME}://${SAFE_DOMAIN}:${PORT}/"
+    DISPLAY_URL="${PANEL_SCHEME}://${DOMAIN}:${PORT}"
+fi
+
 sed -i "s|# CI_ENVIRONMENT = .*|CI_ENVIRONMENT = development|g" .env
 sed -i "s|CI_ENVIRONMENT = .*|CI_ENVIRONMENT = development|g" .env
-sed -i "s|# app.baseURL = .*|app.baseURL = 'http://${SAFE_DOMAIN}:${PORT}/'|g" .env
-sed -i "s|app.baseURL = .*|app.baseURL = 'http://${SAFE_DOMAIN}:${PORT}/'|g" .env
+sed -i "s|# app.baseURL = .*|app.baseURL = '${PANEL_BASE_URL}'|g" .env
+sed -i "s|app.baseURL = .*|app.baseURL = '${PANEL_BASE_URL}'|g" .env
 sed -i "s|# database.default.hostname = .*|database.default.hostname = localhost|g" .env
 sed -i "s|# database.default.database = .*|database.default.database = ${DB_PATH}|g" .env
 sed -i "s|# database.default.DBDriver = .*|database.default.DBDriver = SQLite3|g" .env
@@ -148,6 +184,30 @@ php spark db:seed AdminSeeder
 
 # Configurar SQLite en modo WAL y activar claves foráneas
 sqlite3 "${DB_PATH}" "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;" > /dev/null 2>&1 || true
+
+# Guardar configuración inicial del panel en la tabla settings
+php -r '
+$db = new SQLite3($argv[1]);
+$pairs = [
+    "panel_domain"      => $argv[2],
+    "panel_port"        => $argv[3],
+    "panel_ssl_enabled" => $argv[4],
+    "panel_ssl_mode"    => $argv[5],
+    "panel_force_https" => "1",
+];
+if ($argv[6] !== "") {
+    $pairs["default_ssl_email"] = $argv[6];
+}
+$stmt = $db->prepare("INSERT INTO settings (setting_key, setting_value) VALUES (:k, :v)");
+foreach ($pairs as $k => $v) {
+    $del = $db->prepare("DELETE FROM settings WHERE setting_key = :k");
+    $del->bindValue(":k", $k, SQLITE3_TEXT);
+    $del->execute();
+    $stmt->bindValue(":k", $k, SQLITE3_TEXT);
+    $stmt->bindValue(":v", $v, SQLITE3_TEXT);
+    $stmt->execute();
+}
+' "${DB_PATH}" "${DOMAIN}" "${PORT}" "${PANEL_SSL_ENABLED}" "${PANEL_SSL_MODE}" "${PANEL_SSL_EMAIL}" > /dev/null 2>&1 || true
 
 # Cambiar a entorno de producción
 sed -i "s|CI_ENVIRONMENT = development|CI_ENVIRONMENT = production|g" .env
@@ -174,16 +234,87 @@ chmod 0440 /etc/sudoers.d/proxy-manager
 visudo -cf /etc/sudoers.d/proxy-manager > /dev/null 2>&1 || true
 
 # 9. Configuración del VirtualHost de Nginx para el Panel
-echo -e "\n${YELLOW}⏳ [7/7] Configurando Nginx para el panel web (Puerto ${PORT})...${NC}"
+echo -e "\n${YELLOW}⏳ [7/7] Configurando Nginx para el panel web (${PANEL_SCHEME^^} Puerto ${PORT})...${NC}"
 
 PHP_VER=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
 PHP_SOCK="/var/run/php/php${PHP_VER}-fpm.sock"
 
+PANEL_CERT_PATH=""
+PANEL_KEY_PATH=""
+
+if [ "$PANEL_SSL_ENABLED" = "1" ]; then
+    if [ "$PANEL_SSL_MODE" = "letsencrypt" ]; then
+        echo -e "${YELLOW}⏳ Emitiendo certificado Let's Encrypt para ${DOMAIN}...${NC}"
+        systemctl reload nginx 2>/dev/null || systemctl start nginx 2>/dev/null || true
+        if /usr/local/bin/proxy-executor issue-cert "${DOMAIN}" "-" "${PANEL_SSL_EMAIL:-}"; then
+            PANEL_CERT_PATH="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
+            PANEL_KEY_PATH="/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
+        else
+            echo -e "${YELLOW}⚠️ No se pudo emitir con Let's Encrypt (¿DNS aún no propagado?). Usando certificado autofirmado temporalmente.${NC}"
+            PANEL_SSL_MODE="self_signed"
+        fi
+    fi
+
+    if [ "$PANEL_SSL_MODE" = "self_signed" ]; then
+        /usr/local/bin/proxy-executor issue-self-signed-panel "${DOMAIN}"
+        PANEL_CERT_PATH="/etc/nginx/ssl/proxy-manager.crt"
+        PANEL_KEY_PATH="/etc/nginx/ssl/proxy-manager.key"
+    fi
+fi
+
+if [ "$PANEL_SSL_ENABLED" = "1" ] && [ "$PORT" = "443" ]; then
 cat <<EOF > /etc/nginx/sites-available/proxy-manager
 server {
-    listen ${PORT};
+    listen 80;
+    listen [::]:80;
     server_name ${DOMAIN};
 
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        root /var/www/letsencrypt;
+    }
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+EOF
+else
+: > /etc/nginx/sites-available/proxy-manager
+fi
+
+if [ "$PANEL_SSL_ENABLED" = "1" ]; then
+cat <<EOF >> /etc/nginx/sites-available/proxy-manager
+server {
+    listen ${PORT} ssl;
+    listen [::]:${PORT} ssl;
+    server_name ${DOMAIN};
+
+    ssl_certificate ${PANEL_CERT_PATH};
+    ssl_certificate_key ${PANEL_KEY_PATH};
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+EOF
+    if [ "$PORT" != "443" ]; then
+        echo "    error_page 497 =307 https://\$host:\$server_port\$request_uri;" >> /etc/nginx/sites-available/proxy-manager
+        echo "" >> /etc/nginx/sites-available/proxy-manager
+    fi
+else
+cat <<EOF >> /etc/nginx/sites-available/proxy-manager
+server {
+    listen ${PORT};
+    listen [::]:${PORT};
+    server_name ${DOMAIN};
+
+EOF
+fi
+
+cat <<EOF >> /etc/nginx/sites-available/proxy-manager
     root ${INSTALL_DIR}/public;
     index index.php index.html;
 
@@ -250,7 +381,7 @@ echo "======================================================================"
 echo "    🎉 ¡INSTALACIÓN DE REVERSE PROXY MANAGER COMPLETADA CON ÉXITO!   "
 echo "======================================================================"
 echo -e "${NC}"
-echo -e "👉 **Acceso Web:** http://${DOMAIN}:${PORT}"
+echo -e "👉 **Acceso Web:** ${DISPLAY_URL}"
 echo -e "👉 **Usuario Admin:** admin@demo.com"
 echo -e "👉 **Contraseña:** admin123"
 echo -e "----------------------------------------------------------------------"

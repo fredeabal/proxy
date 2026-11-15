@@ -33,6 +33,16 @@ class ProxyHostModel extends Model
         'custom_vhost',
         'load_balancing_enabled',
         'lb_algorithm',
+        'host_type',
+        'redirect_url',
+        'redirect_code',
+        'preserve_path',
+        'rate_limit_enabled',
+        'rate_limit_requests',
+        'rate_limit_unit',
+        'rate_limit_burst',
+        'rate_limit_nodelay',
+        'access_list_id',
     ];
 
     protected bool $allowEmptyInserts = false;
@@ -60,6 +70,16 @@ class ProxyHostModel extends Model
         'hsts_enabled'          => 'permit_empty|in_list[0,1]',
         'load_balancing_enabled' => 'permit_empty|in_list[0,1]',
         'lb_algorithm'          => 'permit_empty|in_list[round_robin,least_conn,ip_hash]',
+        'host_type'             => 'permit_empty|in_list[proxy,redirect]',
+        'redirect_url'          => 'permit_empty|max_length[500]|valid_redirect_url',
+        'redirect_code'         => 'permit_empty|in_list[301,302,307,308]',
+        'preserve_path'         => 'permit_empty|in_list[0,1]',
+        'rate_limit_enabled'    => 'permit_empty|in_list[0,1]',
+        'rate_limit_requests'   => 'permit_empty|is_natural_no_zero|less_than_equal_to[10000]',
+        'rate_limit_unit'       => 'permit_empty|in_list[s,m]',
+        'rate_limit_burst'      => 'permit_empty|is_natural|less_than_equal_to[10000]',
+        'rate_limit_nodelay'    => 'permit_empty|in_list[0,1]',
+        'access_list_id'        => 'permit_empty|is_natural_no_zero',
     ];
 
     protected $validationMessages = [

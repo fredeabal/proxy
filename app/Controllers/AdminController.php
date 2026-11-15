@@ -6,7 +6,9 @@ use App\Models\AuditLogModel;
 use App\Models\BannedIpModel;
 use App\Models\ProxyHostModel;
 use App\Services\MaintenanceManager;
+use App\Services\NginxConfigGenerator;
 use App\Services\NginxManager;
+use App\Services\SSLManager;
 use App\Services\SystemMonitor;
 use App\Models\SettingModel;
 use App\Models\UserModel;
@@ -46,6 +48,20 @@ class AdminController extends BaseController
 
         // 1. Datos de Seguridad y Ajustes Generales
         $defaultEmail = (string) $this->settingModel->getVal('default_ssl_email', '');
+
+        $parsedBaseUrl   = parse_url(base_url());
+        $fallbackDomain  = (string) ($parsedBaseUrl['host'] ?? '127.0.0.1');
+        $fallbackScheme  = strtolower((string) ($parsedBaseUrl['scheme'] ?? 'http'));
+        $fallbackPort    = (string) ($parsedBaseUrl['port'] ?? ($fallbackScheme === 'https' ? 443 : 81));
+        $panelSslDefault = $fallbackScheme === 'https' ? '1' : '0';
+
+        $panelSsl = [
+            'domain'      => (string) $this->settingModel->getVal('panel_domain', $fallbackDomain),
+            'port'        => (string) $this->settingModel->getVal('panel_port', $fallbackPort),
+            'ssl_enabled' => (string) $this->settingModel->getVal('panel_ssl_enabled', $panelSslDefault) === '1',
+            'ssl_mode'    => (string) $this->settingModel->getVal('panel_ssl_mode', 'self_signed'),
+            'force_https' => (string) $this->settingModel->getVal('panel_force_https', '1') === '1',
+        ];
 
         $userId = (int) session()->get('user_id');
         $user   = $userId > 0 ? $this->userModel->find($userId) : null;
@@ -127,6 +143,7 @@ class AdminController extends BaseController
             'activeMenu'       => $activeMenu,
             'currentTab'       => $tab,
             'defaultEmail'     => $defaultEmail,
+            'panelSsl'         => $panelSsl,
             'twoFactorEnabled' => $twoFactorEnabled,
             'pendingSecret'    => $pendingSecret,
             'totpUri'          => $totpUri,
@@ -197,6 +214,168 @@ class AdminController extends BaseController
 
         return redirect()->to(base_url('admin?tab=security'))
             ->with('success', 'Ajustes generales guardados correctamente.');
+    }
+
+    // ---------------------------------------------------------------------
+    // Configura HTTPS nativo (SSL/TLS) para el vhost del panel (proxy-manager)
+    // ---------------------------------------------------------------------
+    public function updatePanelSsl(): ResponseInterface
+    {
+        $rules = [
+            'panel_domain'   => 'required|max_length[253]',
+            'panel_port'     => 'required|is_natural_no_zero|less_than_equal_to[65535]',
+            'panel_ssl_mode' => 'permit_empty|in_list[letsencrypt,self_signed]',
+        ];
+
+        $messages = [
+            'panel_domain' => [
+                'required' => 'El dominio o IP del panel es obligatorio.',
+            ],
+            'panel_port' => [
+                'required'             => 'El puerto del panel es obligatorio.',
+                'is_natural_no_zero'   => 'El puerto debe ser un número entero positivo.',
+                'less_than_equal_to'   => 'El puerto no puede superar 65535.',
+            ],
+        ];
+
+        if (!$this->validate($rules, $messages)) {
+            return redirect()->to(base_url('admin?tab=security'))
+                ->withInput()
+                ->with('errors', $this->validator->getErrors());
+        }
+
+        $domain     = strtolower(trim((string) $this->request->getPost('panel_domain')));
+        $port       = (int) $this->request->getPost('panel_port');
+        $sslEnabled = !empty($this->request->getPost('panel_ssl_enabled'));
+        $sslMode    = strtolower(trim((string) ($this->request->getPost('panel_ssl_mode') ?: 'self_signed')));
+        $forceHttps = !empty($this->request->getPost('panel_force_https'));
+
+        if ($sslEnabled && $sslMode === 'letsencrypt') {
+            $isIp = filter_var($domain, FILTER_VALIDATE_IP) !== false;
+            if ($isIp || $domain === 'localhost' || $domain === '_') {
+                return redirect()->to(base_url('admin?tab=security'))
+                    ->withInput()
+                    ->with('error', 'Let\'s Encrypt requiere un nombre de dominio válido (no una IP ni localhost). Usa el modo Autofirmado para IPs.');
+            }
+        }
+
+        $nginxConfig  = config('Nginx');
+        $nginxManager = new NginxManager($nginxConfig);
+        $generator    = new NginxConfigGenerator($nginxConfig);
+
+        if ($sslEnabled) {
+            if ($sslMode === 'letsencrypt') {
+                $defaultEmail = (string) $this->settingModel->getVal('default_ssl_email', '');
+                $sslManager   = new SSLManager($nginxConfig, null, null, $nginxManager);
+                try {
+                    $certResult = $sslManager->issueCertificate($domain, [], $defaultEmail !== '' ? $defaultEmail : null);
+                } catch (\Throwable $e) {
+                    AuditLogModel::log('admin_panel_ssl_failed', "Error SSL panel ({$domain}): " . $e->getMessage());
+                    return redirect()->to(base_url('admin?tab=security'))
+                        ->withInput()
+                        ->with('error', $e->getMessage());
+                }
+
+                if (empty($certResult['success'])) {
+                    AuditLogModel::log('admin_panel_ssl_failed', "Fallo Let's Encrypt panel ({$domain}): " . ($certResult['error'] ?? 'Error desconocido'));
+                    return redirect()->to(base_url('admin?tab=security'))
+                        ->withInput()
+                        ->with('error', $certResult['error'] ?? 'No se pudo emitir el certificado Let\'s Encrypt para el panel.');
+                }
+            } else {
+                $selfResult = $nginxManager->issuePanelSelfSignedCert($domain);
+                if (empty($selfResult['success'])) {
+                    AuditLogModel::log('admin_panel_ssl_failed', "Fallo certificado autofirmado panel ({$domain}): " . ($selfResult['error'] ?? 'Error desconocido'));
+                    return redirect()->to(base_url('admin?tab=security'))
+                        ->withInput()
+                        ->with('error', $selfResult['error'] ?? 'No se pudo generar el certificado autofirmado para el panel.');
+                }
+            }
+        }
+
+        try {
+            $panelRoot = (ENVIRONMENT === 'testing' || str_contains(FCPATH, ' '))
+                ? '/var/www/proxy-manager/public'
+                : rtrim(FCPATH, '/');
+
+            $vhostContent = $generator->generatePanelVhost([
+                'domain'      => $domain,
+                'port'        => $port,
+                'ssl_enabled' => $sslEnabled,
+                'ssl_mode'    => $sslMode,
+                'force_https' => $forceHttps,
+                'root'        => $panelRoot,
+                'php_sock'    => $nginxManager->detectPanelPhpSock(),
+            ]);
+        } catch (\Throwable $e) {
+            AuditLogModel::log('admin_panel_ssl_failed', "Error generando vhost panel: " . $e->getMessage());
+            return redirect()->to(base_url('admin?tab=security'))
+                ->withInput()
+                ->with('error', $e->getMessage());
+        }
+
+        $applyResult = $nginxManager->applyPanelVhost($vhostContent);
+        if (empty($applyResult['success'])) {
+            AuditLogModel::log('admin_panel_ssl_failed', "Error aplicando vhost panel: " . ($applyResult['error'] ?? 'Error desconocido'));
+            return redirect()->to(base_url('admin?tab=security'))
+                ->withInput()
+                ->with('error', $applyResult['error'] ?? 'No se pudo aplicar la configuración del panel en Nginx.');
+        }
+
+        $this->settingModel->setVal('panel_domain', $domain);
+        $this->settingModel->setVal('panel_port', (string) $port);
+        $this->settingModel->setVal('panel_ssl_enabled', $sslEnabled ? '1' : '0');
+        $this->settingModel->setVal('panel_ssl_mode', $sslMode);
+        $this->settingModel->setVal('panel_force_https', $forceHttps ? '1' : '0');
+
+        $scheme      = $sslEnabled ? 'https' : 'http';
+        $isStdPort   = ($scheme === 'https' && $port === 443) || ($scheme === 'http' && $port === 80);
+        $portSuffix  = $isStdPort ? '' : ":{$port}";
+        $hostForUrl  = filter_var($domain, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false ? "[{$domain}]" : $domain;
+        $newBaseUrl  = "{$scheme}://{$hostForUrl}{$portSuffix}/";
+
+        $this->updateEnvBaseUrl($newBaseUrl);
+
+        $modeDesc = $sslEnabled ? "HTTPS ({$sslMode}) en {$domain}:{$port}" : "HTTP en {$domain}:{$port}";
+        AuditLogModel::log('admin_panel_ssl_update', "Actualizado acceso del panel: {$modeDesc}");
+
+        $targetRedirect = is_file($nginxConfig->executorBinary)
+            ? $newBaseUrl . 'admin?tab=security'
+            : base_url('admin?tab=security');
+
+        return redirect()->to($targetRedirect)
+            ->with('success', "Configuración HTTPS del panel actualizada ({$modeDesc}).");
+    }
+
+    /**
+     * Actualiza app.baseURL en el archivo .env si existe y es escribible.
+     */
+    protected function updateEnvBaseUrl(string $newBaseUrl): void
+    {
+        if (ENVIRONMENT === 'testing') {
+            return;
+        }
+
+        $envPath = ROOTPATH . '.env';
+        if (!is_file($envPath) || !is_writable($envPath)) {
+            return;
+        }
+
+        $content = (string) @file_get_contents($envPath);
+        if ($content === '') {
+            return;
+        }
+
+        $escaped = str_replace(['\\', "'"], ['\\\\', "\\'"], $newBaseUrl);
+        if (preg_match('/^#?\s*app\.baseURL\s*=.*$/m', $content)) {
+            $updated = preg_replace('/^#?\s*app\.baseURL\s*=.*$/m', "app.baseURL = '{$escaped}'", $content, 1);
+        } else {
+            $updated = rtrim($content) . "\napp.baseURL = '{$escaped}'\n";
+        }
+
+        if ($updated !== null) {
+            @file_put_contents($envPath, $updated);
+        }
     }
 
     // ---------------------------------------------------------------------

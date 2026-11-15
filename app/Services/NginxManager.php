@@ -43,6 +43,18 @@ class NginxManager
         if (!is_dir($this->config->sitesEnabled) && str_starts_with($this->config->sitesEnabled, WRITEPATH)) {
             @mkdir($this->config->sitesEnabled, 0755, true);
         }
+
+        if (!is_dir($this->config->streamsAvailable) && str_starts_with($this->config->streamsAvailable, WRITEPATH)) {
+            @mkdir($this->config->streamsAvailable, 0755, true);
+        }
+
+        if (!is_dir($this->config->streamsEnabled) && str_starts_with($this->config->streamsEnabled, WRITEPATH)) {
+            @mkdir($this->config->streamsEnabled, 0755, true);
+        }
+
+        if (!is_dir($this->config->accessListsPath) && str_starts_with($this->config->accessListsPath, WRITEPATH)) {
+            @mkdir($this->config->accessListsPath, 0755, true);
+        }
     }
 
     /**
@@ -283,6 +295,99 @@ class NginxManager
     }
 
     /**
+     * Valida y aplica la configuración del vhost del panel de administración (proxy-manager).
+     *
+     * @param string $vhostContent Contenido completo del vhost Nginx para el panel
+     * @return array{success: bool, error: ?string, output: ?string}
+     */
+    public function applyPanelVhost(string $vhostContent): array
+    {
+        $vhostContent = trim($vhostContent);
+        if ($vhostContent === '') {
+            return [
+                'success' => false,
+                'error'   => 'La configuración del panel no puede estar vacía.',
+                'output'  => null,
+            ];
+        }
+
+        $struct = $this->validator->validateStructure($vhostContent, true);
+        if (!$struct['valid']) {
+            return [
+                'success' => false,
+                'error'   => 'Validación estructural fallida: ' . $struct['error'],
+                'output'  => null,
+            ];
+        }
+
+        $tempFile = rtrim($this->config->stagingPath, '/') . '/proxy_manager_' . time() . '.conf.tmp';
+        if (@file_put_contents($tempFile, $vhostContent . "\n") === false) {
+            return [
+                'success' => false,
+                'error'   => 'No se pudo escribir el archivo temporal en el directorio de staging.',
+                'output'  => null,
+            ];
+        }
+
+        $fileValid = $this->validator->validateFile($tempFile, true);
+        if (!$fileValid['valid']) {
+            @unlink($tempFile);
+            return [
+                'success' => false,
+                'error'   => 'Error de sintaxis Nginx: ' . ($fileValid['error'] ?? 'Sintaxis inválida.'),
+                'output'  => $fileValid['output'] ?? '',
+            ];
+        }
+
+        $destFile = rtrim($this->config->sitesAvailable, '/') . '/proxy-manager';
+        $destLink = rtrim($this->config->sitesEnabled, '/') . '/proxy-manager';
+
+        $execResult = $this->callExecutor('apply-panel', [$tempFile], $tempFile, $destFile, true, $destLink);
+        @unlink($tempFile);
+
+        if (!$execResult['success']) {
+            return [
+                'success' => false,
+                'error'   => $execResult['error'],
+                'output'  => $execResult['output'],
+            ];
+        }
+
+        return [
+            'success' => true,
+            'error'   => null,
+            'output'  => $execResult['output'],
+        ];
+    }
+
+    /**
+     * Genera un certificado SSL autofirmado para el panel de administración.
+     *
+     * @param string $domainOrIp Dominio, IP, localhost o '_'
+     * @return array{success: bool, error: ?string, output: ?string}
+     */
+    public function issuePanelSelfSignedCert(string $domainOrIp): array
+    {
+        return $this->callExecutor('issue-self-signed-panel', [$domainOrIp]);
+    }
+
+    /**
+     * Detecta la ruta del socket PHP-FPM configurada en el vhost actual del panel.
+     */
+    public function detectPanelPhpSock(): string
+    {
+        $vhostFile = rtrim($this->config->sitesAvailable, '/') . '/proxy-manager';
+        if (is_readable($vhostFile)) {
+            $content = (string) @file_get_contents($vhostFile);
+            if (preg_match('/fastcgi_pass\s+unix:([^;\s]+)\s*;/', $content, $m)) {
+                return trim($m[1]);
+            }
+        }
+
+        return '/var/run/php/php' . PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION . '-fpm.sock';
+    }
+
+    /**
      * Sincroniza la lista de IPs bloqueadas con Nginx generando las directivas `deny <ip>;`.
      *
      * @param array<int, array<string, mixed>> $activeBans
@@ -422,6 +527,122 @@ class NginxManager
     }
 
     /**
+     * Aplica de forma atómica la configuración de un Stream TCP/UDP en Nginx.
+     *
+     * @return array{success: bool, error: ?string, output: ?string, config: ?string}
+     */
+    public function applyStream(array $stream): array
+    {
+        $id = (int) ($stream['id'] ?? 0);
+        if ($id <= 0) {
+            return [
+                'success' => false,
+                'error'   => 'Identificador de Stream inválido.',
+                'output'  => null,
+                'config'  => null,
+            ];
+        }
+
+        try {
+            $configContent = $this->generator->generateStream($stream);
+        } catch (\Throwable $e) {
+            return [
+                'success' => false,
+                'error'   => 'Error en generación de stream: ' . $e->getMessage(),
+                'output'  => null,
+                'config'  => null,
+            ];
+        }
+
+        $struct = $this->validator->validateStructure($configContent);
+        if (!$struct['valid']) {
+            return [
+                'success' => false,
+                'error'   => 'Validación estructural de stream fallida: ' . $struct['error'],
+                'output'  => null,
+                'config'  => $configContent,
+            ];
+        }
+
+        $tempFile = rtrim($this->config->stagingPath, '/') . "/stream_{$id}_" . time() . '.conf.tmp';
+        if (@file_put_contents($tempFile, $configContent) === false) {
+            return [
+                'success' => false,
+                'error'   => 'No se pudo escribir el archivo temporal de staging para el stream.',
+                'output'  => null,
+                'config'  => $configContent,
+            ];
+        }
+
+        $fileValid = $this->validator->validateFile($tempFile, false, true);
+        if (!$fileValid['valid']) {
+            @unlink($tempFile);
+            return [
+                'success' => false,
+                'error'   => 'Error de sintaxis en stream Nginx: ' . ($fileValid['error'] ?? 'Desconocido'),
+                'output'  => $fileValid['output'] ?? '',
+                'config'  => $configContent,
+            ];
+        }
+
+        $destFile  = rtrim($this->config->streamsAvailable, '/') . "/{$id}.conf";
+        $destLink  = rtrim($this->config->streamsEnabled, '/') . "/{$id}.conf";
+        $isEnabled = !empty($stream['enabled']);
+        $action    = $isEnabled ? 'apply-stream' : 'disable-stream';
+
+        $execResult = $this->callExecutor($action, [(string) $id, $tempFile], $tempFile, $destFile, $isEnabled, $destLink);
+        @unlink($tempFile);
+
+        return [
+            'success' => $execResult['success'],
+            'error'   => $execResult['error'],
+            'output'  => $execResult['output'],
+            'config'  => $configContent,
+        ];
+    }
+
+    /**
+     * Elimina un Stream TCP/UDP de Nginx.
+     */
+    public function removeStream(int $id): array
+    {
+        $destFile = rtrim($this->config->streamsAvailable, '/') . "/{$id}.conf";
+        $destLink = rtrim($this->config->streamsEnabled, '/') . "/{$id}.conf";
+
+        return $this->callExecutor('remove-stream', [(string) $id], null, $destFile, false, $destLink);
+    }
+
+    /**
+     * Sincroniza el archivo .htpasswd de una Access List en Nginx.
+     */
+    public function syncAccessList(int $accessListId, string $htpasswdContent): array
+    {
+        $tempFile = rtrim($this->config->stagingPath, '/') . "/access_list_{$accessListId}_" . time() . '.htpasswd.tmp';
+        if (@file_put_contents($tempFile, $htpasswdContent) === false) {
+            return [
+                'success' => false,
+                'error'   => 'No se pudo escribir el archivo temporal de Access List.',
+                'output'  => null,
+            ];
+        }
+
+        $destFile = rtrim($this->config->accessListsPath, '/') . "/access_list_{$accessListId}.htpasswd";
+        $result = $this->callExecutor('sync-access-list', [(string) $accessListId, $tempFile], $tempFile, $destFile);
+        @unlink($tempFile);
+
+        return $result;
+    }
+
+    /**
+     * Elimina el archivo .htpasswd de una Access List en Nginx.
+     */
+    public function deleteAccessList(int $accessListId): array
+    {
+        $destFile = rtrim($this->config->accessListsPath, '/') . "/access_list_{$accessListId}.htpasswd";
+        return $this->callExecutor('delete-access-list', [(string) $accessListId], null, $destFile);
+    }
+
+    /**
      * Garantiza que el archivo de configuración base de GeoIP exista en Nginx.
      * Si no existe, genera la configuración por defecto passthrough para que
      * la directiva $geoip_blocked sea reconocida por Nginx sin errores de sintaxis.
@@ -485,19 +706,23 @@ class NginxManager
 
         $linkPath = $destLink ?? (rtrim($this->config->sitesEnabled, '/') . '/' . ($args[0] ?? '0') . '.conf');
 
-        if ($action === 'apply-host' && $destFile && file_exists($destFile)) {
+        if (($action === 'apply-host' || $action === 'apply-panel' || $action === 'apply-stream') && $destFile && file_exists($destFile)) {
             if (is_writable(dirname($linkPath))) {
                 @unlink($linkPath);
                 @symlink($destFile, $linkPath);
             }
-        } elseif ($action === 'disable-host') {
+        } elseif ($action === 'disable-host' || $action === 'disable-stream') {
             if (file_exists($linkPath) || is_link($linkPath)) {
                 @unlink($linkPath);
             }
-        } elseif ($action === 'remove-host') {
+        } elseif ($action === 'remove-host' || $action === 'remove-stream') {
             if (file_exists($linkPath) || is_link($linkPath)) {
                 @unlink($linkPath);
             }
+            if ($destFile && file_exists($destFile)) {
+                @unlink($destFile);
+            }
+        } elseif ($action === 'delete-access-list') {
             if ($destFile && file_exists($destFile)) {
                 @unlink($destFile);
             }

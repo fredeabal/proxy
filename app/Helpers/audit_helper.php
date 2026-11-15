@@ -21,6 +21,8 @@ if (! function_exists('audit_label')) {
             '2fa_disabled'                  => '2fa off',
             'admin_general_update'          => 'ajustes',
             'settings_general_update'       => 'ajustes',
+            'admin_panel_ssl_update'        => 'panel ssl',
+            'admin_panel_ssl_failed'        => 'panel ssl fail',
             'admin_smtp_update'             => 'smtp edit',
             'settings_smtp_update'          => 'smtp edit',
             'admin_smtp_test'               => 'smtp test',

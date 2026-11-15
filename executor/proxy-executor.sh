@@ -15,6 +15,9 @@ umask 027
 # Directorios permitidos
 SITES_AVAILABLE="${NGINX_SITES_AVAILABLE:-/etc/nginx/sites-available}"
 SITES_ENABLED="${NGINX_SITES_ENABLED:-/etc/nginx/sites-enabled}"
+STREAMS_AVAILABLE="${NGINX_STREAMS_AVAILABLE:-/etc/nginx/streams-available}"
+STREAMS_ENABLED="${NGINX_STREAMS_ENABLED:-/etc/nginx/streams-enabled}"
+ACCESS_LISTS_DIR="${NGINX_ACCESS_LISTS_DIR:-/etc/nginx/access_lists}"
 if [ -n "${NGINX_STAGING_DIR:-}" ]; then
     STAGING_DIR="${NGINX_STAGING_DIR}"
 elif [ -d "/var/www/proxy-manager/writable/staging" ]; then
@@ -578,6 +581,215 @@ EOF
         fi
 
         echo "OK: Base de datos GeoLite2-Country actualizada correctamente."
+        exit 0
+        ;;
+
+    apply-panel)
+        if [ $# -ne 1 ]; then
+            error_exit "Uso: $0 apply-panel <staging_file>" 38
+        fi
+
+        REAL_STAGING="$(resolve_authorized_staging "$1" 39 40)"
+        ensure_confd_defaults
+
+        SRC_FILE="${SITES_AVAILABLE}/proxy-manager"
+        DST_LINK="${SITES_ENABLED}/proxy-manager"
+        BACKUP_FILE=""
+        HAD_LINK=0
+        if [ -L "${DST_LINK}" ] || [ -e "${DST_LINK}" ]; then
+            HAD_LINK=1
+        fi
+
+        if [ -f "${SRC_FILE}" ]; then
+            BACKUP_FILE=$(mktemp /tmp/nginx_panel_bak_XXXXXX.conf)
+            cp -p "${SRC_FILE}" "${BACKUP_FILE}"
+        fi
+
+        cp "${REAL_STAGING}" "${SRC_FILE}"
+        chmod 644 "${SRC_FILE}"
+        ln -sf "${SRC_FILE}" "${DST_LINK}"
+
+        if ! nginx -t 2>&1; then
+            if [ -n "${BACKUP_FILE}" ] && [ -f "${BACKUP_FILE}" ]; then
+                mv -f "${BACKUP_FILE}" "${SRC_FILE}"
+                chmod 644 "${SRC_FILE}"
+            else
+                rm -f "${SRC_FILE}"
+            fi
+            if [ "${HAD_LINK}" -eq 0 ]; then
+                rm -f "${DST_LINK}"
+            fi
+            error_exit "La configuración del panel es inválida. Se ha revertido al estado anterior." 41
+        fi
+
+        rm -f "${BACKUP_FILE}"
+        systemctl reload nginx 2>&1
+        echo "OK: Configuración del panel aplicada y Nginx recargado."
+        exit 0
+        ;;
+
+    issue-self-signed-panel)
+        if [ $# -ne 1 ]; then
+            error_exit "Uso: $0 issue-self-signed-panel <domain_or_ip>" 42
+        fi
+
+        TARGET="$1"
+        DOMAIN_REGEX="^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$"
+        IPV4_REGEX="^([0-9]{1,3}\.){3}[0-9]{1,3}$"
+        IPV6_REGEX="^[0-9a-fA-F:]+$"
+
+        if [[ "${TARGET}" =~ ^- ]] || [[ "${TARGET}" == *".."* ]]; then
+            error_exit "Objetivo inválido para certificado autofirmado: ${TARGET}" 43
+        fi
+
+        SAN_ENTRY=""
+        CN_VALUE="${TARGET}"
+        if [[ "${TARGET}" =~ ${IPV4_REGEX} ]]; then
+            SAN_ENTRY="IP:${TARGET}"
+        elif [[ "${TARGET}" =~ : ]] && [[ "${TARGET}" =~ ${IPV6_REGEX} ]]; then
+            SAN_ENTRY="IP:${TARGET}"
+        elif [ "${TARGET}" = "_" ]; then
+            CN_VALUE="proxy-manager.local"
+            SAN_ENTRY="DNS:localhost,IP:127.0.0.1"
+        elif [[ "${TARGET}" =~ ${DOMAIN_REGEX} ]]; then
+            SAN_ENTRY="DNS:${TARGET}"
+        else
+            error_exit "Dominio o IP inválido para certificado autofirmado: ${TARGET}" 43
+        fi
+
+        SSL_DIR="/etc/nginx/ssl"
+        CERT_FILE="${SSL_DIR}/proxy-manager.crt"
+        KEY_FILE="${SSL_DIR}/proxy-manager.key"
+        mkdir -p "${SSL_DIR}"
+        chmod 755 "${SSL_DIR}"
+
+        if ! openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+            -keyout "${KEY_FILE}" \
+            -out "${CERT_FILE}" \
+            -subj "/CN=${CN_VALUE}/O=Reverse Proxy Manager" \
+            -addext "subjectAltName=${SAN_ENTRY}" 2>&1; then
+            error_exit "No se pudo generar el certificado autofirmado." 44
+        fi
+
+        chown root:root "${CERT_FILE}" "${KEY_FILE}"
+        chmod 644 "${CERT_FILE}"
+        chmod 600 "${KEY_FILE}"
+
+        echo "OK: Certificado autofirmado generado para ${TARGET}."
+        exit 0
+        ;;
+
+    apply-stream)
+        if [ $# -ne 2 ]; then
+            error_exit "Uso: $0 apply-stream <id> <staging_file>" 50
+        fi
+        STREAM_ID="$1"
+        STAGING_FILE="$2"
+        if ! [[ "${STREAM_ID}" =~ ^[0-9]+$ ]]; then
+            error_exit "ID de stream inválido: ${STREAM_ID}" 51
+        fi
+        REAL_STAGING="$(resolve_authorized_staging "${STAGING_FILE}" 52 53)"
+
+        mkdir -p "${STREAMS_AVAILABLE}" "${STREAMS_ENABLED}"
+        chmod 755 "${STREAMS_AVAILABLE}" "${STREAMS_ENABLED}"
+
+        # Asegurar bloque stream {} en /etc/nginx/nginx.conf si existe
+        if [ -f /etc/nginx/nginx.conf ] && ! grep -q "streams-enabled" /etc/nginx/nginx.conf; then
+            cat << 'EOF' >> /etc/nginx/nginx.conf
+
+stream {
+    include /etc/nginx/streams-enabled/*.conf;
+}
+EOF
+        fi
+
+        DEST_FILE="${STREAMS_AVAILABLE}/${STREAM_ID}.conf"
+        LINK_FILE="${STREAMS_ENABLED}/${STREAM_ID}.conf"
+        BACKUP_FILE=""
+        if [ -f "${DEST_FILE}" ]; then
+            BACKUP_FILE="${DEST_FILE}.bak.$$"
+            cp -a "${DEST_FILE}" "${BACKUP_FILE}"
+        fi
+
+        cp "${REAL_STAGING}" "${DEST_FILE}"
+        chmod 0644 "${DEST_FILE}"
+        ln -sf "${DEST_FILE}" "${LINK_FILE}"
+
+        if ! nginx -t 2>&1; then
+            rm -f "${LINK_FILE}"
+            if [ -n "${BACKUP_FILE}" ] && [ -f "${BACKUP_FILE}" ]; then
+                mv "${BACKUP_FILE}" "${DEST_FILE}"
+                ln -sf "${DEST_FILE}" "${LINK_FILE}"
+            else
+                rm -f "${DEST_FILE}"
+            fi
+            error_exit "Error de sintaxis en stream. Se realizó rollback." 54
+        fi
+
+        [ -n "${BACKUP_FILE}" ] && rm -f "${BACKUP_FILE}"
+        systemctl reload nginx 2>&1
+        echo "OK: Stream ${STREAM_ID} aplicado y Nginx recargado."
+        exit 0
+        ;;
+
+    disable-stream)
+        if [ $# -lt 1 ]; then
+            error_exit "Uso: $0 disable-stream <id>" 50
+        fi
+        STREAM_ID="$1"
+        if ! [[ "${STREAM_ID}" =~ ^[0-9]+$ ]]; then
+            error_exit "ID de stream inválido: ${STREAM_ID}" 51
+        fi
+        rm -f "${STREAMS_ENABLED}/${STREAM_ID}.conf"
+        nginx -t 2>&1 && systemctl reload nginx 2>&1
+        echo "OK: Stream ${STREAM_ID} deshabilitado."
+        exit 0
+        ;;
+
+    remove-stream)
+        if [ $# -ne 1 ]; then
+            error_exit "Uso: $0 remove-stream <id>" 50
+        fi
+        STREAM_ID="$1"
+        if ! [[ "${STREAM_ID}" =~ ^[0-9]+$ ]]; then
+            error_exit "ID de stream inválido: ${STREAM_ID}" 51
+        fi
+        rm -f "${STREAMS_ENABLED}/${STREAM_ID}.conf" "${STREAMS_AVAILABLE}/${STREAM_ID}.conf"
+        nginx -t 2>&1 && systemctl reload nginx 2>&1
+        echo "OK: Stream ${STREAM_ID} eliminado."
+        exit 0
+        ;;
+
+    sync-access-list)
+        if [ $# -ne 2 ]; then
+            error_exit "Uso: $0 sync-access-list <id> <staging_file>" 55
+        fi
+        AL_ID="$1"
+        STAGING_FILE="$2"
+        if ! [[ "${AL_ID}" =~ ^[0-9]+$ ]]; then
+            error_exit "ID de Access List inválido: ${AL_ID}" 56
+        fi
+        REAL_STAGING="$(resolve_authorized_staging "${STAGING_FILE}" 57 58)"
+        mkdir -p "${ACCESS_LISTS_DIR}"
+        chmod 755 "${ACCESS_LISTS_DIR}"
+        DEST_FILE="${ACCESS_LISTS_DIR}/access_list_${AL_ID}.htpasswd"
+        cp "${REAL_STAGING}" "${DEST_FILE}"
+        chown root:www-data "${DEST_FILE}" 2>/dev/null || true
+        chmod 0644 "${DEST_FILE}"
+        echo "OK: Access List ${AL_ID} sincronizada."
+        exit 0
+        ;;
+
+    delete-access-list)
+        if [ $# -ne 1 ]; then
+            error_exit "Uso: $0 delete-access-list <id>" 55
+        fi
+        AL_ID="$1"
+        if ! [[ "${AL_ID}" =~ ^[0-9]+$ ]]; then
+            error_exit "ID de Access List inválido: ${AL_ID}" 56
+        fi
+        rm -f "${ACCESS_LISTS_DIR}/access_list_${AL_ID}.htpasswd"
+        echo "OK: Access List ${AL_ID} eliminada."
         exit 0
         ;;
 

@@ -2,9 +2,11 @@
 
 namespace App\Controllers;
 
+use App\Models\AccessListModel;
 use App\Models\AuditLogModel;
 use App\Models\CertificateModel;
 use App\Models\ProxyHostModel;
+use App\Models\ProxyLocationModel;
 use App\Models\ProxyUpstreamModel;
 use App\Services\NginxManager;
 use App\Services\SSLManager;
@@ -15,17 +17,21 @@ class ProxyHostController extends BaseController
 {
     protected ProxyHostModel $proxyModel;
     protected ProxyUpstreamModel $upstreamModel;
+    protected ProxyLocationModel $locationModel;
+    protected AccessListModel $accessListModel;
     protected CertificateModel $certModel;
     protected NginxManager $nginxManager;
     protected SSLManager $sslManager;
 
     public function __construct()
     {
-        $this->proxyModel    = new ProxyHostModel();
-        $this->upstreamModel = new ProxyUpstreamModel();
-        $this->certModel     = new CertificateModel();
-        $this->nginxManager  = new NginxManager();
-        $this->sslManager    = new SSLManager(null, $this->certModel, $this->proxyModel, $this->nginxManager);
+        $this->proxyModel      = new ProxyHostModel();
+        $this->upstreamModel   = new ProxyUpstreamModel();
+        $this->locationModel   = new ProxyLocationModel();
+        $this->accessListModel = new AccessListModel();
+        $this->certModel       = new CertificateModel();
+        $this->nginxManager    = new NginxManager();
+        $this->sslManager      = new SSLManager(null, $this->certModel, $this->proxyModel, $this->nginxManager);
     }
 
     /**
@@ -120,8 +126,20 @@ class ProxyHostController extends BaseController
                 'hsts_enabled'           => 0,
                 'load_balancing_enabled' => 0,
                 'lb_algorithm'           => 'round_robin',
+                'host_type'              => 'proxy',
+                'redirect_url'           => '',
+                'redirect_code'          => 301,
+                'preserve_path'          => 1,
+                'rate_limit_enabled'     => 0,
+                'rate_limit_requests'    => 10,
+                'rate_limit_unit'        => 's',
+                'rate_limit_burst'       => 20,
+                'rate_limit_nodelay'     => 1,
+                'access_list_id'         => null,
             ],
             'upstreams'       => old('upstreams', []),
+            'locations'       => old('locations', []),
+            'accessLists'     => $this->accessListModel->orderBy('name', 'ASC')->findAll(),
             'certificate'     => null,
             'certificates'    => $this->certModel->orderBy('domain', 'ASC')->findAll(),
             'allowedHeaders'  => array_values(array_unique(array_column(ProxyHostRules::ALLOWED_CUSTOM_HEADERS, 'name'))),
@@ -163,37 +181,61 @@ class ProxyHostController extends BaseController
         $sendTimeout    = $this->request->getPost('proxy_send_timeout');
         $maxBodySize    = $this->request->getPost('client_max_body_size');
 
-        $isLb = $this->request->getPost('load_balancing_enabled') ? 1 : 0;
-        $lbAlgorithm = strtolower(trim((string) $this->request->getPost('lb_algorithm')));
-        if (!in_array($lbAlgorithm, ['round_robin', 'least_conn', 'ip_hash'], true)) {
-            $lbAlgorithm = 'round_robin';
-        }
+        $advFields  = $this->extractAdvancedFeatureFields();
+        $isRedirect = ($advFields['host_type'] === 'redirect');
 
-        $parsedUpstreams = [];
-        if ($isLb) {
-            $lbResult = $this->parseUpstreamsFromRequest();
-            if ($lbResult['error'] !== null) {
-                return redirect()->back()->withInput()->with('error', $lbResult['error']);
+        if ($isRedirect) {
+            $rules = new ProxyHostRules();
+            $redirErr = null;
+            if (!$rules->valid_redirect_url($advFields['redirect_url'], $redirErr)) {
+                return redirect()->back()->withInput()->with('error', $redirErr);
             }
-            $parsedUpstreams = $lbResult['servers'];
+            $isLb            = 0;
+            $parsedUpstreams = [];
+            $parsedLocations = [];
+            $forwardHost     = '127.0.0.1';
+            $forwardPort     = 80;
+            $scheme          = 'http';
+        } else {
+            $isLb = $this->request->getPost('load_balancing_enabled') ? 1 : 0;
+            $lbAlgorithm = strtolower(trim((string) $this->request->getPost('lb_algorithm')));
+            if (!in_array($lbAlgorithm, ['round_robin', 'least_conn', 'ip_hash'], true)) {
+                $lbAlgorithm = 'round_robin';
+            }
+
+            $parsedUpstreams = [];
+            if ($isLb) {
+                $lbResult = $this->parseUpstreamsFromRequest();
+                if ($lbResult['error'] !== null) {
+                    return redirect()->back()->withInput()->with('error', $lbResult['error']);
+                }
+                $parsedUpstreams = $lbResult['servers'];
+            }
+
+            $locResult = $this->parseLocationsFromRequest();
+            if ($locResult['error'] !== null) {
+                return redirect()->back()->withInput()->with('error', $locResult['error']);
+            }
+            $parsedLocations = $locResult['locations'];
+
+            $forwardHost = trim((string) $this->request->getPost('forward_host'));
+            $forwardPort = (int) $this->request->getPost('forward_port');
+            $scheme      = strtolower(trim((string) $this->request->getPost('scheme')));
+
+            if ($isLb && !empty($parsedUpstreams)) {
+                $forwardHost = $parsedUpstreams[0]['server_host'];
+                $forwardPort = (int) $parsedUpstreams[0]['server_port'];
+            }
         }
 
-        $forwardHost = trim((string) $this->request->getPost('forward_host'));
-        $forwardPort = (int) $this->request->getPost('forward_port');
-
-        if ($isLb && !empty($parsedUpstreams)) {
-            $forwardHost = $parsedUpstreams[0]['server_host'];
-            $forwardPort = (int) $parsedUpstreams[0]['server_port'];
-        }
-
-        $data = [
+        $data = array_merge([
             'domain'                 => $primaryDomain,
             'domain_names'           => $normalizedAliases,
-            'scheme'                 => strtolower(trim((string) $this->request->getPost('scheme'))),
+            'scheme'                 => $scheme,
             'forward_host'           => $forwardHost,
             'forward_port'           => $forwardPort,
             'load_balancing_enabled' => $isLb,
-            'lb_algorithm'           => $lbAlgorithm,
+            'lb_algorithm'           => $lbAlgorithm ?? 'round_robin',
             'websocket_enabled'      => $this->request->getPost('websocket_enabled') ? 1 : 0,
             'enabled'                => $this->request->getPost('enabled') !== null ? ($this->request->getPost('enabled') ? 1 : 0) : 1,
             'custom_headers'         => $rawHeaders !== '' ? $rawHeaders : null,
@@ -203,7 +245,7 @@ class ProxyHostController extends BaseController
             'client_max_body_size'   => ($maxBodySize !== null && $maxBodySize !== '') ? $maxBodySize : 10,
             'proxy_ssl_verify'       => $this->request->getPost('proxy_ssl_verify') ? 1 : 0,
             'hsts_enabled'           => $this->request->getPost('hsts_enabled') ? 1 : 0,
-        ];
+        ], $advFields);
 
         $ssl = $this->parseSslSelection($primaryDomain);
         if ($ssl['error']) {
@@ -232,6 +274,13 @@ class ProxyHostController extends BaseController
             $data['upstreams'] = $parsedUpstreams;
         }
 
+        if (!empty($parsedLocations)) {
+            $this->locationModel->replaceForProxy($newId, $parsedLocations);
+            $data['locations'] = $parsedLocations;
+        } else {
+            $data['locations'] = [];
+        }
+
         // Despliegue atómico en Nginx
         $nginxResult = $this->nginxManager->applyHost($data);
         if (!$nginxResult['success']) {
@@ -239,6 +288,7 @@ class ProxyHostController extends BaseController
             if ($isLb) {
                 $this->upstreamModel->where('proxy_host_id', $newId)->delete();
             }
+            $this->locationModel->where('proxy_host_id', $newId)->delete();
             $this->proxyModel->delete($newId);
 
             AuditLogModel::log(
@@ -294,13 +344,17 @@ class ProxyHostController extends BaseController
             return $this->doesCertificateCoverDomain((string) $cert['domain'], $hostDomain);
         }));
 
-        $upstreams = $this->upstreamModel->getForProxy($id);
+        $upstreams   = $this->upstreamModel->getForProxy($id);
+        $locations   = $this->locationModel->getForProxy($id);
+        $accessLists = $this->accessListModel->orderBy('name', 'ASC')->findAll();
 
         $data = [
             'title'           => 'Editar Proxy Host',
             'activeMenu'      => 'proxy-hosts',
             'proxy'           => $proxy,
             'upstreams'       => old('upstreams', $upstreams),
+            'locations'       => old('locations', $locations),
+            'accessLists'     => $accessLists,
             'certificate'     => $certificate,
             'certificates'    => $matchingCertificates,
             'allowedHeaders'  => array_values(array_unique(array_column(ProxyHostRules::ALLOWED_CUSTOM_HEADERS, 'name'))),
@@ -349,34 +403,59 @@ class ProxyHostController extends BaseController
         $sendTimeout    = $this->request->getPost('proxy_send_timeout');
         $maxBodySize    = $this->request->getPost('client_max_body_size');
 
-        $isLb = $this->request->getPost('load_balancing_enabled') ? 1 : 0;
-        $lbAlgorithm = strtolower(trim((string) $this->request->getPost('lb_algorithm')));
-        if (!in_array($lbAlgorithm, ['round_robin', 'least_conn', 'ip_hash'], true)) {
-            $lbAlgorithm = 'round_robin';
-        }
+        $advFields  = $this->extractAdvancedFeatureFields();
+        $isRedirect = ($advFields['host_type'] === 'redirect');
 
-        $parsedUpstreams = [];
-        if ($isLb) {
-            $lbResult = $this->parseUpstreamsFromRequest();
-            if ($lbResult['error'] !== null) {
-                return redirect()->back()->withInput()->with('error', $lbResult['error']);
+        if ($isRedirect) {
+            $rules = new ProxyHostRules();
+            $redirErr = null;
+            if (!$rules->valid_redirect_url($advFields['redirect_url'], $redirErr)) {
+                return redirect()->back()->withInput()->with('error', $redirErr);
             }
-            $parsedUpstreams = $lbResult['servers'];
+            $isLb            = 0;
+            $lbAlgorithm     = 'round_robin';
+            $parsedUpstreams = [];
+            $parsedLocations = [];
+            $forwardHost     = '127.0.0.1';
+            $forwardPort     = 80;
+            $scheme          = 'http';
+        } else {
+            $isLb = $this->request->getPost('load_balancing_enabled') ? 1 : 0;
+            $lbAlgorithm = strtolower(trim((string) $this->request->getPost('lb_algorithm')));
+            if (!in_array($lbAlgorithm, ['round_robin', 'least_conn', 'ip_hash'], true)) {
+                $lbAlgorithm = 'round_robin';
+            }
+
+            $parsedUpstreams = [];
+            if ($isLb) {
+                $lbResult = $this->parseUpstreamsFromRequest();
+                if ($lbResult['error'] !== null) {
+                    return redirect()->back()->withInput()->with('error', $lbResult['error']);
+                }
+                $parsedUpstreams = $lbResult['servers'];
+            }
+
+            $locResult = $this->parseLocationsFromRequest();
+            if ($locResult['error'] !== null) {
+                return redirect()->back()->withInput()->with('error', $locResult['error']);
+            }
+            $parsedLocations = $locResult['locations'];
+
+            $forwardHost = trim((string) $this->request->getPost('forward_host'));
+            $forwardPort = (int) $this->request->getPost('forward_port');
+            $scheme      = strtolower(trim((string) $this->request->getPost('scheme')));
+
+            if ($isLb && !empty($parsedUpstreams)) {
+                $forwardHost = $parsedUpstreams[0]['server_host'];
+                $forwardPort = (int) $parsedUpstreams[0]['server_port'];
+            }
         }
 
-        $forwardHost = trim((string) $this->request->getPost('forward_host'));
-        $forwardPort = (int) $this->request->getPost('forward_port');
-
-        if ($isLb && !empty($parsedUpstreams)) {
-            $forwardHost = $parsedUpstreams[0]['server_host'];
-            $forwardPort = (int) $parsedUpstreams[0]['server_port'];
-        }
-
-        $data = [
+        $data = array_merge([
             'id'                     => $id,
             'domain'                 => $primaryDomain,
             'domain_names'           => $normalizedAliases,
-            'scheme'                 => strtolower(trim((string) $this->request->getPost('scheme'))),
+            'scheme'                 => $scheme,
             'forward_host'           => $forwardHost,
             'forward_port'           => $forwardPort,
             'load_balancing_enabled' => $isLb,
@@ -390,7 +469,7 @@ class ProxyHostController extends BaseController
             'client_max_body_size'   => ($maxBodySize !== null && $maxBodySize !== '') ? $maxBodySize : ($existing['client_max_body_size'] ?? 10),
             'proxy_ssl_verify'       => $this->request->getPost('proxy_ssl_verify') ? 1 : 0,
             'hsts_enabled'           => $this->request->getPost('hsts_enabled') ? 1 : 0,
-        ];
+        ], $advFields);
 
         $ssl = $this->parseSslSelection($primaryDomain);
         if ($ssl['error']) {
@@ -418,6 +497,7 @@ class ProxyHostController extends BaseController
         }
 
         $previousUpstreams = $this->upstreamModel->getForProxy($id);
+        $previousLocations = $this->locationModel->getForProxy($id);
         if ($isLb) {
             $this->upstreamModel->syncForProxy($id, $parsedUpstreams);
             $data['upstreams'] = $parsedUpstreams;
@@ -426,13 +506,23 @@ class ProxyHostController extends BaseController
             $data['upstreams'] = [];
         }
 
+        if (!$isRedirect) {
+            $this->locationModel->replaceForProxy($id, $parsedLocations);
+            $data['locations'] = $parsedLocations;
+        } else {
+            $this->locationModel->where('proxy_host_id', $id)->delete();
+            $data['locations'] = [];
+        }
+
         // Aplicación atómica en Nginx
         $nginxResult = $this->nginxManager->applyHost($data);
         if (!$nginxResult['success']) {
             // Revertir en base de datos al estado anterior
             $this->proxyModel->update($id, $existing);
             $this->upstreamModel->syncForProxy($id, $previousUpstreams);
+            $this->locationModel->replaceForProxy($id, $previousLocations);
             $existing['upstreams'] = $previousUpstreams;
+            $existing['locations'] = $previousLocations;
             $this->nginxManager->applyHost($existing);
 
             AuditLogModel::log(
@@ -1124,5 +1214,125 @@ class ProxyHostController extends BaseController
             'error'   => null,
             'servers' => $validatedServers,
         ];
+    }
+
+    /**
+     * Extrae y normaliza los campos de Redirection Host, Rate Limiting y Access List del POST.
+     */
+    protected function extractAdvancedFeatureFields(): array
+    {
+        $hostType = strtolower(trim((string) ($this->request->getPost('host_type') ?: 'proxy')));
+        if (!in_array($hostType, ['proxy', 'redirect'], true)) {
+            $hostType = 'proxy';
+        }
+
+        $redirectUrl  = trim((string) $this->request->getPost('redirect_url'));
+        $redirectCode = (int) ($this->request->getPost('redirect_code') ?: 301);
+        if (!in_array($redirectCode, [301, 302, 307, 308], true)) {
+            $redirectCode = 301;
+        }
+        $preservePath = $this->request->getPost('preserve_path') !== null
+            ? ($this->request->getPost('preserve_path') ? 1 : 0)
+            : 1;
+
+        $rateLimitEnabled  = $this->request->getPost('rate_limit_enabled') ? 1 : 0;
+        $rateLimitRequests = (int) ($this->request->getPost('rate_limit_requests') ?: 10);
+        $rateLimitUnit     = strtolower(trim((string) ($this->request->getPost('rate_limit_unit') ?: 's')));
+        if (!in_array($rateLimitUnit, ['s', 'm'], true)) {
+            $rateLimitUnit = 's';
+        }
+        $rateLimitBurst   = $this->request->getPost('rate_limit_burst') !== null && $this->request->getPost('rate_limit_burst') !== ''
+            ? (int) $this->request->getPost('rate_limit_burst')
+            : 20;
+        $rateLimitNodelay = $this->request->getPost('rate_limit_nodelay') ? 1 : 0;
+
+        $rawAccessListId = trim((string) $this->request->getPost('access_list_id'));
+        $accessListId    = ($rawAccessListId !== '' && ctype_digit($rawAccessListId) && (int) $rawAccessListId > 0)
+            ? (int) $rawAccessListId
+            : null;
+
+        return [
+            'host_type'           => $hostType,
+            'redirect_url'        => $hostType === 'redirect' ? $redirectUrl : null,
+            'redirect_code'       => $redirectCode,
+            'preserve_path'       => $preservePath,
+            'rate_limit_enabled'  => $rateLimitEnabled,
+            'rate_limit_requests' => max(1, min(10000, $rateLimitRequests)),
+            'rate_limit_unit'     => $rateLimitUnit,
+            'rate_limit_burst'    => max(0, min(10000, $rateLimitBurst)),
+            'rate_limit_nodelay'  => $rateLimitNodelay,
+            'access_list_id'      => $accessListId,
+        ];
+    }
+
+    /**
+     * Valida y normaliza el array de bloques `location` personalizados desde el POST.
+     *
+     * @return array{error: ?string, locations: list<array>}
+     */
+    protected function parseLocationsFromRequest(): array
+    {
+        $rawLocations = $this->request->getPost('locations');
+        if (!is_array($rawLocations) || empty($rawLocations)) {
+            return ['error' => null, 'locations' => []];
+        }
+
+        $rules     = new ProxyHostRules();
+        $validated = [];
+        $seenPaths = [];
+
+        foreach ($rawLocations as $idx => $loc) {
+            $path = trim((string) ($loc['path'] ?? ''));
+            $host = trim((string) ($loc['forward_host'] ?? ''));
+
+            if ($path === '' && $host === '') {
+                continue;
+            }
+
+            $pathError = null;
+            if (!ProxyHostRules::validLocationPath($path, $pathError)) {
+                return ['error' => 'Ruta #' . ($idx + 1) . ": {$pathError}", 'locations' => []];
+            }
+
+            if (isset($seenPaths[$path])) {
+                return ['error' => "La ruta \"{$path}\" está duplicada.", 'locations' => []];
+            }
+            $seenPaths[$path] = true;
+
+            $scheme = strtolower(trim((string) ($loc['scheme'] ?? 'http')));
+            if (!in_array($scheme, ['http', 'https'], true)) {
+                return ['error' => 'Ruta #' . ($idx + 1) . ': El protocolo debe ser http o https.', 'locations' => []];
+            }
+
+            $hostError = null;
+            if (!$rules->valid_forward_host($host, $hostError)) {
+                return ['error' => 'Ruta #' . ($idx + 1) . ": {$hostError}", 'locations' => []];
+            }
+
+            $port = (int) ($loc['forward_port'] ?? 0);
+            if ($port < 1 || $port > 65535) {
+                return ['error' => 'Ruta #' . ($idx + 1) . ': El puerto debe estar entre 1 y 65535.', 'locations' => []];
+            }
+
+            $customHeaders = trim((string) ($loc['custom_headers'] ?? ''));
+            if ($customHeaders !== '') {
+                $parsedHeaders = ProxyHostRules::parseAndValidateHeaders($customHeaders);
+                if (!$parsedHeaders['valid']) {
+                    return ['error' => 'Ruta #' . ($idx + 1) . ': ' . ($parsedHeaders['error'] ?? 'Cabeceras inválidas.'), 'locations' => []];
+                }
+                $customHeaders = (string) ($parsedHeaders['normalized'] ?? '');
+            }
+
+            $validated[] = [
+                'path'              => $path,
+                'scheme'            => $scheme,
+                'forward_host'      => $host,
+                'forward_port'      => $port,
+                'websocket_enabled' => !empty($loc['websocket_enabled']) ? 1 : 0,
+                'custom_headers'    => $customHeaders !== '' ? $customHeaders : null,
+            ];
+        }
+
+        return ['error' => null, 'locations' => $validated];
     }
 }

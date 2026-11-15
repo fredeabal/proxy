@@ -32,6 +32,12 @@ $isEnabled = (bool) old('enabled', $proxy['enabled'] ?? 1);
 $isLb    = (bool) old('load_balancing_enabled', $proxy['load_balancing_enabled'] ?? 0);
 $currentLbAlgo = old('lb_algorithm', $proxy['lb_algorithm'] ?? 'round_robin');
 $existingUpstreams = old('upstreams', $upstreams ?? []);
+$hostType = old('host_type', $proxy['host_type'] ?? 'proxy');
+$isRedirect = ($hostType === 'redirect');
+$rateLimitEnabled = (bool) old('rate_limit_enabled', $proxy['rate_limit_enabled'] ?? 0);
+$rateLimitNodelay = (bool) old('rate_limit_nodelay', $proxy['rate_limit_nodelay'] ?? 1);
+$selectedAccessList = (string) old('access_list_id', $proxy['access_list_id'] ?? '');
+$existingLocations = old('locations', $locations ?? []);
 ?>
 
 <!-- Cabecera de Página -->
@@ -97,8 +103,42 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
                 </div>
               </div>
 
-              <!-- Modo y Protocolo -->
+              <!-- Tipo de Host -->
               <div class="col-12 col-md-4">
+                <label for="host_type" class="form-label fw-semibold">Tipo de Host</label>
+                <select id="host_type" name="host_type" class="select2 form-control">
+                  <option value="proxy" <?= !$isRedirect ? 'selected' : '' ?>>Proxy Inverso</option>
+                  <option value="redirect" <?= $isRedirect ? 'selected' : '' ?>>Redirección HTTP (301/302)</option>
+                </select>
+              </div>
+
+              <!-- CAMPOS REDIRECCIÓN -->
+              <div class="col-12 col-md-5 redirect-target-col <?= !$isRedirect ? 'd-none' : '' ?>">
+                <label for="redirect_url" class="form-label fw-semibold">URL de Destino <span class="text-danger">*</span></label>
+                <input type="url" id="redirect_url" name="redirect_url" class="form-control font-monospace"
+                       placeholder="https://nuevo-dominio.com"
+                       value="<?= esc(old('redirect_url', $proxy['redirect_url'] ?? '')) ?>">
+              </div>
+              <div class="col-6 col-md-3 redirect-target-col <?= !$isRedirect ? 'd-none' : '' ?>">
+                <label for="redirect_code" class="form-label fw-semibold">Código HTTP</label>
+                <?php $rCode = (int) old('redirect_code', $proxy['redirect_code'] ?? 301); ?>
+                <select id="redirect_code" name="redirect_code" class="select2 form-control">
+                  <option value="301" <?= $rCode === 301 ? 'selected' : '' ?>>301 (Permanente)</option>
+                  <option value="302" <?= $rCode === 302 ? 'selected' : '' ?>>302 (Temporal)</option>
+                  <option value="307" <?= $rCode === 307 ? 'selected' : '' ?>>307 (Temporal estricto)</option>
+                  <option value="308" <?= $rCode === 308 ? 'selected' : '' ?>>308 (Permanente estricto)</option>
+                </select>
+              </div>
+              <div class="col-12 redirect-target-col <?= !$isRedirect ? 'd-none' : '' ?>">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" role="switch" id="preserve_path" name="preserve_path" value="1"
+                         <?= old('preserve_path', $proxy['preserve_path'] ?? 1) ? 'checked' : '' ?>>
+                  <label class="form-check-label fw-semibold" for="preserve_path">Preservar ruta y parámetros (<code>$request_uri</code>)</label>
+                </div>
+              </div>
+
+              <!-- Modo y Protocolo (Solo Proxy Inverso) -->
+              <div class="col-12 col-md-5 proxy-target-col <?= $isRedirect ? 'd-none' : '' ?>">
                 <label for="load_balancing_enabled" class="form-label fw-semibold">Modo</label>
                 <select id="load_balancing_enabled" name="load_balancing_enabled" class="select2 form-control">
                   <option value="0" <?= !$isLb ? 'selected' : '' ?>>Servidor Único</option>
@@ -106,9 +146,9 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
                 </select>
               </div>
 
-              <div class="col-12 col-md-2">
+              <div class="col-12 col-md-3 proxy-target-col <?= $isRedirect ? 'd-none' : '' ?>">
                 <label for="scheme" class="form-label fw-semibold">Protocolo <span class="text-danger">*</span></label>
-                <select id="scheme" name="scheme" class="select2 form-control <?= session('errors.scheme') ? 'is-invalid' : '' ?>" required>
+                <select id="scheme" name="scheme" class="select2 form-control <?= session('errors.scheme') ? 'is-invalid' : '' ?>">
                   <?php $currentScheme = old('scheme', $proxy['scheme'] ?? 'http'); ?>
                   <option value="http" <?= $currentScheme === 'http' ? 'selected' : '' ?>>http://</option>
                   <option value="https" <?= $currentScheme === 'https' ? 'selected' : '' ?>>https://</option>
@@ -116,7 +156,7 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
               </div>
 
               <!-- CAMPOS MODO 1: DESTINO ÚNICO (Estilo estándar limpio) -->
-              <div class="col-8 col-md-4 single-target-col <?= $isLb ? 'd-none' : '' ?>">
+              <div class="col-8 col-md-8 single-target-col proxy-target-col <?= ($isLb || $isRedirect) ? 'd-none' : '' ?>">
                 <label for="forward_host" class="form-label fw-semibold">IP o Hostname <span class="text-danger">*</span></label>
                 <input type="text" 
                        id="forward_host" 
@@ -126,7 +166,7 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
                        value="<?= esc(old('forward_host', $proxy['forward_host'] ?? '')) ?>">
               </div>
 
-              <div class="col-4 col-md-2 single-target-col <?= $isLb ? 'd-none' : '' ?>">
+              <div class="col-4 col-md-4 single-target-col proxy-target-col <?= ($isLb || $isRedirect) ? 'd-none' : '' ?>">
                 <label for="forward_port" class="form-label fw-semibold">Puerto <span class="text-danger">*</span></label>
                 <input type="number" 
                        id="forward_port" 
@@ -244,6 +284,135 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
                   Activa o desactiva este proxy en el servidor Nginx sin perder su configuración.
                 </div>
               </div>
+            </div>
+          </div>
+
+          <hr class="my-4 opacity-10">
+
+          <!-- SECCIÓN 2B: ACCESS LIST Y RATE LIMITING -->
+          <div class="mb-4">
+            <div class="d-flex align-items-center gap-2 mb-3">
+              <div class="round-32 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle flex-shrink-0">
+                <i class="ti ti-shield-lock fs-5"></i>
+              </div>
+              <h5 class="card-title fw-semibold mb-0">Control de Acceso y Rate Limiting</h5>
+            </div>
+
+            <div class="row g-3">
+              <!-- Access List -->
+              <div class="col-12 col-md-6">
+                <label for="access_list_id" class="form-label fw-semibold">Access List (IP / Auth Basic)</label>
+                <select id="access_list_id" name="access_list_id" class="select2 form-control">
+                  <option value="">Ninguna (Acceso público)</option>
+                  <?php foreach (($accessLists ?? []) as $al): ?>
+                    <option value="<?= (int) $al['id'] ?>" <?= $selectedAccessList === (string) $al['id'] ? 'selected' : '' ?>>
+                      <?= esc($al['name']) ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+                <div class="form-text text-muted">
+                  Aplica reglas IP/CIDR y autenticación básica desde <a href="<?= base_url('access-lists') ?>">Access Lists</a>.
+                </div>
+              </div>
+
+              <!-- Rate Limiting Switch -->
+              <div class="col-12 col-md-6 d-flex align-items-center">
+                <div>
+                  <div class="form-check form-switch mb-1">
+                    <input class="form-check-input" type="checkbox" role="switch" id="rate_limit_enabled" name="rate_limit_enabled" value="1" <?= $rateLimitEnabled ? 'checked' : '' ?>>
+                    <label class="form-check-label fw-semibold" for="rate_limit_enabled">Activar Rate Limiting por IP</label>
+                  </div>
+                  <div class="form-text text-muted ps-4">
+                    Protege el servicio contra abuso y ráfagas mediante <code>limit_req_zone</code> y <code>burst</code>.
+                  </div>
+                </div>
+              </div>
+
+              <!-- Rate Limiting Opciones -->
+              <div class="col-12 <?= !$rateLimitEnabled ? 'd-none' : '' ?>" id="rateLimitPanel">
+                <div class="row g-3 p-3 rounded border">
+                  <div class="col-6 col-md-3">
+                    <label for="rate_limit_requests" class="form-label small fw-semibold">Peticiones</label>
+                    <input type="number" id="rate_limit_requests" name="rate_limit_requests" class="form-control font-monospace" min="1" max="10000"
+                           value="<?= esc(old('rate_limit_requests', $proxy['rate_limit_requests'] ?? 10)) ?>">
+                  </div>
+                  <div class="col-6 col-md-3">
+                    <label for="rate_limit_unit" class="form-label small fw-semibold">Por Unidad</label>
+                    <?php $rlUnit = old('rate_limit_unit', $proxy['rate_limit_unit'] ?? 's'); ?>
+                    <select id="rate_limit_unit" name="rate_limit_unit" class="select2 form-control">
+                      <option value="s" <?= $rlUnit === 's' ? 'selected' : '' ?>>Segundo (r/s)</option>
+                      <option value="m" <?= $rlUnit === 'm' ? 'selected' : '' ?>>Minuto (r/m)</option>
+                    </select>
+                  </div>
+                  <div class="col-6 col-md-3">
+                    <label for="rate_limit_burst" class="form-label small fw-semibold">Burst (Ráfaga)</label>
+                    <input type="number" id="rate_limit_burst" name="rate_limit_burst" class="form-control font-monospace" min="0" max="10000"
+                           value="<?= esc(old('rate_limit_burst', $proxy['rate_limit_burst'] ?? 20)) ?>">
+                  </div>
+                  <div class="col-6 col-md-3 d-flex align-items-end">
+                    <div class="form-check form-switch mb-2">
+                      <input class="form-check-input" type="checkbox" role="switch" id="rate_limit_nodelay" name="rate_limit_nodelay" value="1" <?= $rateLimitNodelay ? 'checked' : '' ?>>
+                      <label class="form-check-label small fw-semibold" for="rate_limit_nodelay"><code>nodelay</code></label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SECCIÓN 2C: MÚLTIPLES BLOQUES LOCATION (Solo Proxy Inverso) -->
+          <div class="mb-4 proxy-target-col <?= $isRedirect ? 'd-none' : '' ?>" id="customLocationsSection">
+            <hr class="my-4 opacity-10">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+              <div class="d-flex align-items-center gap-2">
+                <div class="round-32 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle flex-shrink-0">
+                  <i class="ti ti-folders fs-5"></i>
+                </div>
+                <h5 class="card-title fw-semibold mb-0">Rutas Personalizadas (<code>location</code>)</h5>
+              </div>
+              <button type="button" class="btn btn-outline-primary btn-sm" id="addCustomLocationBtn">
+                <i class="ti ti-plus"></i> Añadir Ruta
+              </button>
+            </div>
+
+            <div id="customLocationsContainer" class="d-flex flex-column gap-2">
+              <?php foreach ($existingLocations as $idx => $loc): ?>
+                <div class="row g-2 align-items-center custom-location-row p-2 rounded border">
+                  <div class="col-12 col-md-3">
+                    <input type="text" name="locations[<?= (int) $idx ?>][path]" class="form-control font-monospace form-control-sm"
+                           placeholder="/api" value="<?= esc($loc['path'] ?? '') ?>">
+                  </div>
+                  <div class="col-4 col-md-2">
+                    <select name="locations[<?= (int) $idx ?>][scheme]" class="form-select form-select-sm">
+                      <option value="http" <?= ($loc['scheme'] ?? 'http') === 'http' ? 'selected' : '' ?>>http://</option>
+                      <option value="https" <?= ($loc['scheme'] ?? '') === 'https' ? 'selected' : '' ?>>https://</option>
+                    </select>
+                  </div>
+                  <div class="col-5 col-md-3">
+                    <input type="text" name="locations[<?= (int) $idx ?>][forward_host]" class="form-control font-monospace form-control-sm"
+                           placeholder="127.0.0.1" value="<?= esc($loc['forward_host'] ?? '') ?>">
+                  </div>
+                  <div class="col-3 col-md-2">
+                    <input type="number" name="locations[<?= (int) $idx ?>][forward_port]" class="form-control font-monospace form-control-sm"
+                           placeholder="3000" min="1" max="65535" value="<?= esc($loc['forward_port'] ?? '') ?>">
+                  </div>
+                  <div class="col-8 col-md-1">
+                    <div class="form-check" title="WebSockets">
+                      <input class="form-check-input" type="checkbox" name="locations[<?= (int) $idx ?>][websocket_enabled]" value="1"
+                             <?= !empty($loc['websocket_enabled']) ? 'checked' : '' ?>>
+                      <label class="form-check-label small">WS</label>
+                    </div>
+                  </div>
+                  <div class="col-4 col-md-1 text-end">
+                    <button type="button" class="btn btn-outline-danger btn-sm remove-location-btn" title="Eliminar ruta">
+                      <i class="ti ti-x"></i>
+                    </button>
+                  </div>
+                </div>
+              <?php endforeach; ?>
+            </div>
+            <div class="form-text text-muted mt-1">
+              Define rutas específicas (ej. <code>/api</code> o <code>^~ /static</code>) hacia otro puerto o servidor dentro del mismo dominio.
             </div>
           </div>
 
@@ -445,3 +614,77 @@ $existingUpstreams = old('upstreams', $upstreams ?? []);
     </script>
   <?php endif; ?>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const hostTypeSelect = document.getElementById('host_type');
+  const rateLimitCheck = document.getElementById('rate_limit_enabled');
+  const rateLimitPanel = document.getElementById('rateLimitPanel');
+
+  function syncHostTypeUi() {
+    if (!hostTypeSelect) return;
+    const isRedirect = hostTypeSelect.value === 'redirect';
+    document.querySelectorAll('.redirect-target-col').forEach(el => el.classList.toggle('d-none', !isRedirect));
+    document.querySelectorAll('.proxy-target-col').forEach(el => {
+      if (isRedirect) {
+        el.classList.add('d-none');
+      } else if (!el.classList.contains('single-target-col') && !el.classList.contains('lb-target-col')) {
+        el.classList.remove('d-none');
+      }
+    });
+    if (!isRedirect) {
+      const lbSel = document.getElementById('load_balancing_enabled');
+      if (lbSel) lbSel.dispatchEvent(new Event('change'));
+    }
+  }
+
+  hostTypeSelect?.addEventListener('change', syncHostTypeUi);
+  if (window.jQuery) {
+    window.jQuery('#host_type').on('change.select2 change', syncHostTypeUi);
+  }
+
+  rateLimitCheck?.addEventListener('change', function () {
+    rateLimitPanel?.classList.toggle('d-none', !this.checked);
+  });
+
+  let locIdx = <?= count($existingLocations) ?>;
+  document.getElementById('addCustomLocationBtn')?.addEventListener('click', function () {
+    const html = `
+      <div class="row g-2 align-items-center custom-location-row p-2 rounded border">
+        <div class="col-12 col-md-3">
+          <input type="text" name="locations[${locIdx}][path]" class="form-control font-monospace form-control-sm" placeholder="/api">
+        </div>
+        <div class="col-4 col-md-2">
+          <select name="locations[${locIdx}][scheme]" class="form-select form-select-sm">
+            <option value="http">http://</option>
+            <option value="https">https://</option>
+          </select>
+        </div>
+        <div class="col-5 col-md-3">
+          <input type="text" name="locations[${locIdx}][forward_host]" class="form-control font-monospace form-control-sm" placeholder="127.0.0.1">
+        </div>
+        <div class="col-3 col-md-2">
+          <input type="number" name="locations[${locIdx}][forward_port]" class="form-control font-monospace form-control-sm" placeholder="3000" min="1" max="65535">
+        </div>
+        <div class="col-8 col-md-1">
+          <div class="form-check" title="WebSockets">
+            <input class="form-check-input" type="checkbox" name="locations[${locIdx}][websocket_enabled]" value="1">
+            <label class="form-check-label small">WS</label>
+          </div>
+        </div>
+        <div class="col-4 col-md-1 text-end">
+          <button type="button" class="btn btn-outline-danger btn-sm remove-location-btn" title="Eliminar ruta"><i class="ti ti-x"></i></button>
+        </div>
+      </div>`;
+    document.getElementById('customLocationsContainer')?.insertAdjacentHTML('beforeend', html);
+    locIdx++;
+  });
+
+  document.addEventListener('click', function (e) {
+    const btn = e.target.closest('.remove-location-btn');
+    if (btn) {
+      btn.closest('.custom-location-row')?.remove();
+    }
+  });
+});
+</script>

@@ -39,6 +39,23 @@ $routes->group('', ['filter' => 'auth'], static function (RouteCollection $route
     $routes->get('certificates/renew-all', 'CertificateController::renewAll');
     $routes->post('certificates/delete/(:num)', 'CertificateController::delete/$1');
 
+    // Gestión de Access Lists (IP/CIDR y Auth Basic)
+    $routes->get('access-lists', 'AccessListController::index');
+    $routes->get('access-lists/new', 'AccessListController::new');
+    $routes->post('access-lists/create', 'AccessListController::create');
+    $routes->get('access-lists/edit/(:num)', 'AccessListController::edit/$1');
+    $routes->post('access-lists/update/(:num)', 'AccessListController::update/$1');
+    $routes->post('access-lists/delete/(:num)', 'AccessListController::delete/$1');
+
+    // Gestión de Streams TCP/UDP
+    $routes->get('streams', 'StreamController::index');
+    $routes->get('streams/new', 'StreamController::new');
+    $routes->post('streams/create', 'StreamController::create');
+    $routes->get('streams/edit/(:num)', 'StreamController::edit/$1');
+    $routes->post('streams/update/(:num)', 'StreamController::update/$1');
+    $routes->get('streams/toggle/(:num)', 'StreamController::toggle/$1');
+    $routes->post('streams/delete/(:num)', 'StreamController::delete/$1');
+
     // Perfil del Usuario Autenticado (Disponible para admin y user)
     $routes->get('profile', 'ProfileController::index');
     $routes->post('profile/update', 'ProfileController::update');
@@ -62,6 +79,7 @@ $routes->group('', ['filter' => 'auth'], static function (RouteCollection $route
         // Administración Unificada (Seguridad/2FA, SMTP, Backups y Auditoría)
         $routes->get('admin', 'AdminController::index');
         $routes->post('admin/general', 'AdminController::updateGeneral');
+        $routes->post('admin/panel-ssl', 'AdminController::updatePanelSsl');
         $routes->post('admin/smtp', 'AdminController::updateSmtp');
         $routes->post('admin/smtp/test', 'AdminController::testSmtp');
         $routes->post('admin/2fa/enable', 'AdminController::enable2fa');
@@ -87,6 +105,7 @@ $routes->group('', ['filter' => 'auth'], static function (RouteCollection $route
         // Redirecciones y compatibilidad legacy (/settings y /backups)
         $routes->get('settings', static fn() => redirect()->to(base_url('admin?tab=security')));
         $routes->post('settings/general', 'AdminController::updateGeneral');
+        $routes->post('settings/panel-ssl', 'AdminController::updatePanelSsl');
         $routes->post('settings/smtp', 'AdminController::updateSmtp');
         $routes->post('settings/smtp/test', 'AdminController::testSmtp');
         $routes->post('settings/2fa/enable', 'AdminController::enable2fa');

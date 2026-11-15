@@ -95,7 +95,7 @@
 </div>
 
 <!-- Ajustes Generales (Let's Encrypt / ACME) -->
-<div class="card border shadow-none mb-0">
+<div class="card border shadow-none mb-4">
   <div class="card-header bg-transparent border-bottom py-3 d-flex align-items-center gap-2">
     <div class="round-32 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle">
       <i class="ti ti-adjustments fs-5"></i>
@@ -125,6 +125,128 @@
         <div class="col-12 d-flex justify-content-center align-items-center gap-2 mt-4 pt-2">
           <a href="<?= base_url('admin?tab=security') ?>" class="btn btn-dark btn-sm">Cancelar</a>
           <button type="submit" class="btn btn-primary btn-sm px-3">Guardar</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- HTTPS Nativo del Panel de Administración (proxy-manager) -->
+<?php
+$panelSslCfg  = $panelSsl ?? ['domain' => '127.0.0.1', 'port' => '81', 'ssl_enabled' => false, 'ssl_mode' => 'self_signed', 'force_https' => true];
+$panelSslOn   = !empty($panelSslCfg['ssl_enabled']);
+$panelSslMode = (string) ($panelSslCfg['ssl_mode'] ?? 'self_signed');
+?>
+<div class="card border shadow-none mb-0">
+  <div class="card-header bg-transparent border-bottom py-3 d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center gap-2">
+      <div class="round-32 d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle">
+        <i class="ti ti-lock-access fs-5"></i>
+      </div>
+      <h5 class="card-title fw-semibold mb-0">HTTPS del Panel de Administración</h5>
+    </div>
+    <?php if ($panelSslOn): ?>
+      <span class="badge border bg-success-subtle text-success border-success">
+        HTTPS Activo (<?= $panelSslMode === 'letsencrypt' ? "Let's Encrypt" : 'Autofirmado' ?>)
+      </span>
+    <?php else: ?>
+      <span class="badge border bg-secondary-subtle text-secondary border-secondary">Solo HTTP</span>
+    <?php endif; ?>
+  </div>
+  <div class="card-body p-4">
+    <form method="post" action="<?= base_url('admin/panel-ssl') ?>">
+      <?= csrf_field() ?>
+      <div class="row g-3">
+        <div class="col-12 col-md-8">
+          <label for="panel_domain" class="form-label fw-semibold">Dominio o IP del Panel <span class="text-danger">*</span></label>
+          <div class="input-group">
+            <span class="input-group-text bg-light"><i class="ti ti-world"></i></span>
+            <input type="text"
+                   id="panel_domain"
+                   name="panel_domain"
+                   class="form-control font-monospace <?= session('errors.panel_domain') ? 'is-invalid' : '' ?>"
+                   placeholder="panel.midominio.com o 192.168.1.100"
+                   value="<?= esc(old('panel_domain', $panelSslCfg['domain'])) ?>"
+                   required>
+          </div>
+          <div class="form-text small text-muted">
+            Nombre de dominio dedicado (ej. <code>panel.midominio.com</code>) o dirección IP del servidor.
+          </div>
+        </div>
+
+        <div class="col-12 col-md-4">
+          <label for="panel_port" class="form-label fw-semibold">Puerto de Acceso <span class="text-danger">*</span></label>
+          <div class="input-group">
+            <span class="input-group-text bg-light"><i class="ti ti-plug"></i></span>
+            <input type="number"
+                   id="panel_port"
+                   name="panel_port"
+                   class="form-control font-monospace <?= session('errors.panel_port') ? 'is-invalid' : '' ?>"
+                   min="1"
+                   max="65535"
+                   value="<?= esc(old('panel_port', $panelSslCfg['port'])) ?>"
+                   required>
+          </div>
+          <div class="form-text small text-muted">
+            Puerto estándar del panel (<code>81</code>) o <code>443</code> para dominio dedicado.
+          </div>
+        </div>
+
+        <div class="col-12 col-md-6">
+          <div class="form-check form-switch mt-2">
+            <input class="form-check-input"
+                   type="checkbox"
+                   role="switch"
+                   id="panel_ssl_enabled"
+                   name="panel_ssl_enabled"
+                   value="1"
+                   <?= old('panel_ssl_enabled', $panelSslOn ? '1' : '0') === '1' ? 'checked' : '' ?>>
+            <label class="form-check-label fw-semibold" for="panel_ssl_enabled">
+              Activar SSL/TLS (HTTPS) para el panel
+            </label>
+          </div>
+          <div class="form-text small text-muted">
+            Configura el vhost <code>proxy-manager</code> en Nginx con cifrado TLS 1.2/1.3.
+          </div>
+        </div>
+
+        <div class="col-12 col-md-6">
+          <div class="form-check form-switch mt-2">
+            <input class="form-check-input"
+                   type="checkbox"
+                   role="switch"
+                   id="panel_force_https"
+                   name="panel_force_https"
+                   value="1"
+                   <?= old('panel_force_https', !empty($panelSslCfg['force_https']) ? '1' : '0') === '1' ? 'checked' : '' ?>>
+            <label class="form-check-label fw-semibold" for="panel_force_https">
+              Forzar redirección HTTP → HTTPS
+            </label>
+          </div>
+          <div class="form-text small text-muted">
+            Redirige automáticamente peticiones HTTP al protocolo seguro (puerto 80 → 443 o error 497 en puertos personalizados).
+          </div>
+        </div>
+
+        <div class="col-12 col-md-6">
+          <label for="panel_ssl_mode" class="form-label fw-semibold">Tipo de Certificado SSL</label>
+          <select id="panel_ssl_mode" name="panel_ssl_mode" class="select2 form-control">
+            <?php $selMode = old('panel_ssl_mode', $panelSslMode); ?>
+            <option value="letsencrypt" <?= $selMode === 'letsencrypt' ? 'selected' : '' ?>>
+              Let's Encrypt (ACME automático - requiere dominio público)
+            </option>
+            <option value="self_signed" <?= $selMode === 'self_signed' ? 'selected' : '' ?>>
+              Autofirmado (Self-Signed - ideal para IP o red local)
+            </option>
+          </select>
+          <div class="form-text small text-muted">
+            Si usas Let's Encrypt, se empleará el correo configurado en Ajustes Generales.
+          </div>
+        </div>
+
+        <div class="col-12 d-flex justify-content-center align-items-center gap-2 mt-4 pt-2">
+          <a href="<?= base_url('admin?tab=security') ?>" class="btn btn-dark btn-sm">Cancelar</a>
+          <button type="submit" class="btn btn-primary btn-sm px-3">Aplicar y Recargar Nginx</button>
         </div>
       </div>
     </form>

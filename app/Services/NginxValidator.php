@@ -20,9 +20,10 @@ class NginxValidator
      * Valida estructuralmente una cadena de configuración Nginx.
      *
      * @param string $configContent Contenido de la configuración
+     * @param bool $allowFastcgi Permitir bloques PHP-FPM (fastcgi_pass) como el del panel
      * @return array{valid: bool, error: ?string}
      */
-    public function validateStructure(string $configContent): array
+    public function validateStructure(string $configContent, bool $allowFastcgi = false): array
     {
         if (trim($configContent) === '') {
             return ['valid' => false, 'error' => 'La configuración está vacía.'];
@@ -43,7 +44,11 @@ class NginxValidator
             return ['valid' => false, 'error' => 'Falta el bloque server principal.'];
         }
 
-        if (!str_contains($configContent, 'proxy_pass') && !str_contains($configContent, 'return 301')) {
+        $hasProxyOrRedirect = str_contains($configContent, 'proxy_pass')
+            || (bool) preg_match('/\breturn\s+(301|302|307|308)\b/', $configContent);
+        $hasFastcgi         = $allowFastcgi && str_contains($configContent, 'fastcgi_pass');
+
+        if (!$hasProxyOrRedirect && !$hasFastcgi) {
             return ['valid' => false, 'error' => 'No se encontró directiva proxy_pass ni redirección.'];
         }
 
@@ -73,9 +78,10 @@ class NginxValidator
      * Valida un archivo de configuración utilizando el ejecutor o nginx -t.
      *
      * @param string $filePath Ruta absoluta del archivo
+     * @param bool $allowFastcgi Permitir bloques PHP-FPM (fastcgi_pass) como el del panel
      * @return array{valid: bool, error: ?string, output: string}
      */
-    public function validateFile(string $filePath): array
+    public function validateFile(string $filePath, bool $allowFastcgi = false, bool $isStream = false): array
     {
         if (!file_exists($filePath)) {
             return [
@@ -87,7 +93,7 @@ class NginxValidator
 
         // Primero validación estructural
         $content = (string) file_get_contents($filePath);
-        $struct = $this->validateStructure($content);
+        $struct = $this->validateStructure($content, $allowFastcgi);
         if (!$struct['valid']) {
             return [
                 'valid'  => false,
@@ -134,9 +140,13 @@ class NginxValidator
         if ($nginxBin !== null) {
             // Un archivo vhost (server {}) debe envolverse en un bloque http {} para que nginx -t -c pueda validarlo
             $testWrapper = tempnam(sys_get_temp_dir(), 'nginx_val_');
-            $mimeInclude = file_exists('/etc/nginx/mime.types') ? 'include /etc/nginx/mime.types;' : '';
-            $confdInclude = is_dir('/etc/nginx/conf.d') ? 'include /etc/nginx/conf.d/*.conf;' : '';
-            $wrapperContent = "events { worker_connections 1024; }\nhttp {\n    {$mimeInclude}\n    map \$remote_addr \$geoip_blocked {\n        default 0;\n    }\n    {$confdInclude}\n    include \"{$filePath}\";\n}\n";
+            if ($isStream) {
+                $wrapperContent = "events { worker_connections 1024; }\nstream {\n    include \"{$filePath}\";\n}\n";
+            } else {
+                $mimeInclude = file_exists('/etc/nginx/mime.types') ? 'include /etc/nginx/mime.types;' : '';
+                $confdInclude = is_dir('/etc/nginx/conf.d') ? 'include /etc/nginx/conf.d/*.conf;' : '';
+                $wrapperContent = "events { worker_connections 1024; }\nhttp {\n    {$mimeInclude}\n    map \$remote_addr \$geoip_blocked {\n        default 0;\n    }\n    {$confdInclude}\n    include \"{$filePath}\";\n}\n";
+            }
             file_put_contents($testWrapper, $wrapperContent);
 
             $cmd = [$nginxBin, '-t', '-c', $testWrapper];
